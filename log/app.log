@@ -1,0 +1,20 @@
+2025-05-27 11:51:20.822 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-05-27 11:51:20.822 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-05-27 11:51:21.170 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-05-27 11:51:21.171 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-05-27 11:53:22.078 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-05-27 11:53:22.078 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-05-27 11:53:22.092 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-05-27 11:53:22.092 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-05-27 11:54:32.211 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-05-27 11:54:32.211 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-05-27 11:54:32.226 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-05-27 11:54:32.226 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-05-27 11:56:50.962 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-05-27 11:56:50.962 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-05-27 11:56:50.980 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-05-27 11:56:50.980 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-05-27 11:58:27.301 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-05-27 11:58:27.301 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-05-27 11:58:27.316 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-05-27 11:58:27.316 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
