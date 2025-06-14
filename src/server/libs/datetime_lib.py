@@ -150,3 +150,5 @@ class DateTimeLib(object):
 
 
 dt = DateTimeLib()
+if __name__ == '__main__':
+    print(dt.method_datetime())

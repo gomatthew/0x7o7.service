@@ -4,5 +4,5 @@ __pycache__/
 *.pyc
 .DS_Store
 # 忽略 Python 缓存
-
+log
 *.py[cod]
