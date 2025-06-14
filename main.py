@@ -3,14 +3,14 @@ import os
 import sys
 import uvicorn
 import platform
-from src.server import create_app
-from src.configs import get_setting ,logger
+from src.server import create_app, create_tables
+from src.configs import get_setting, logger
 
 logger.info('[START SERVER]')
 logger.info(f'Runtime Mode | {os.getenv("RUNTIME_ENV")}')
 logger.info(f'Operate System | {platform.platform()}')
 logger.info(f'Python Edition | {sys.version}')
-
+create_tables()
 app = create_app()
 settings = get_setting()
-uvicorn.run(app,host=settings.APP_HOST,port=settings.APP_PORT)
+uvicorn.run(app, host=settings.APP_HOST, port=settings.APP_PORT)

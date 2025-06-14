@@ -119,3 +119,99 @@
 2025-05-27 23:07:50.840 | INFO     | src.server.service.auth_service:user_login:10 - {'status': 200, 'message': 'login success', 'data': None}
 2025-05-27 23:07:50.957 | INFO     | src.server.service.auth_service:user_login:10 - {'status': 200, 'message': 'login success', 'data': None}
 2025-05-27 23:07:51.081 | INFO     | src.server.service.auth_service:user_login:10 - {'status': 200, 'message': 'login success', 'data': None}
+2025-06-14 23:09:21.329 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:09:21.329 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:09:21.329 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:09:21.329 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:09:21.351 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:09:21.351 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:09:21.351 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:09:21.351 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:10:58.993 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:10:58.993 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:10:58.993 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:10:58.993 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:10:59.007 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:10:59.007 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:10:59.007 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:10:59.007 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:14:10.394 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:14:10.394 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:14:10.394 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:14:10.394 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:14:10.409 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:14:10.409 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:14:10.409 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:14:10.409 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:16:55.672 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:16:55.672 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:16:55.672 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:16:55.672 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:16:55.687 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:16:55.687 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:16:55.687 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:16:55.687 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:17:26.705 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:17:26.705 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:17:26.705 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:17:26.705 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:17:26.718 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:17:26.718 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:17:26.718 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:17:26.718 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:17:57.901 | INFO     | src.server.service.user_service:user_register:16 - 🟢 新增用户:[START] ==> 0x7o7
+2025-06-14 23:17:57.901 | INFO     | src.server.service.user_service:user_register:16 - 🟢 新增用户:[START] ==> 0x7o7
+2025-06-14 23:17:57.906 | ERROR    | src.server.service.user_service:user_register:34 - 🔴 新增用户:[END]
+2025-06-14 23:17:57.906 | ERROR    | src.server.service.user_service:user_register:34 - 🔴 新增用户:[END]
+2025-06-14 23:17:57.907 | ERROR    | src.server.service.user_service:user_register:35 - 'NoneType' object has no attribute 'id'
+2025-06-14 23:17:57.907 | ERROR    | src.server.service.user_service:user_register:35 - 'NoneType' object has no attribute 'id'
+2025-06-14 23:18:18.978 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:18:18.978 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:18:18.978 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:18:18.978 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:18:18.991 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:18:18.991 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:18:18.991 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:18:18.991 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:18:21.496 | INFO     | src.server.service.user_service:user_register:17 - 🟢 新增用户:[START] ==> 0x7o7
+2025-06-14 23:18:21.496 | INFO     | src.server.service.user_service:user_register:17 - 🟢 新增用户:[START] ==> 0x7o7
+2025-06-14 23:18:21.502 | ERROR    | src.server.service.user_service:user_register:35 - 🔴 新增用户:[END]
+2025-06-14 23:18:21.502 | ERROR    | src.server.service.user_service:user_register:35 - 🔴 新增用户:[END]
+2025-06-14 23:18:21.502 | ERROR    | src.server.service.user_service:user_register:36 - 'NoneType' object has no attribute 'id'
+2025-06-14 23:18:21.502 | ERROR    | src.server.service.user_service:user_register:36 - 'NoneType' object has no attribute 'id'
+2025-06-14 23:18:21.503 | ERROR    | src.server.service.user_service:user_register:37 - Traceback (most recent call last):
+  File "/Users/0x7o7/0x7o7_workspace/0x7o7.service/src/server/service/user_service.py", line 19, in user_register
+    check_info, check_tag = get_user_by_id(user_phone=phone, user_email=mail)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/0x7o7/0x7o7_workspace/0x7o7.service/src/server/db/session.py", line 28, in wrapper
+    result = f(session, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/0x7o7/0x7o7_workspace/0x7o7.service/src/server/db/repository/user_repository.py", line 19, in get_user_by_id
+    return user_obj.id, True
+           ^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'id'
+
+2025-06-14 23:18:21.503 | ERROR    | src.server.service.user_service:user_register:37 - Traceback (most recent call last):
+  File "/Users/0x7o7/0x7o7_workspace/0x7o7.service/src/server/service/user_service.py", line 19, in user_register
+    check_info, check_tag = get_user_by_id(user_phone=phone, user_email=mail)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/0x7o7/0x7o7_workspace/0x7o7.service/src/server/db/session.py", line 28, in wrapper
+    result = f(session, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/0x7o7/0x7o7_workspace/0x7o7.service/src/server/db/repository/user_repository.py", line 19, in get_user_by_id
+    return user_obj.id, True
+           ^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'id'
+
+2025-06-14 23:19:46.133 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:19:46.133 | INFO     | __main__:<module>:9 - [START SERVER]
+2025-06-14 23:19:46.134 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:19:46.134 | INFO     | __main__:<module>:10 - Runtime Mode | None
+2025-06-14 23:19:46.148 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:19:46.148 | INFO     | __main__:<module>:11 - Operate System | macOS-15.5-arm64-arm-64bit
+2025-06-14 23:19:46.148 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:19:46.148 | INFO     | __main__:<module>:12 - Python Edition | 3.11.9 (v3.11.9:de54cf5be3, Apr  2 2024, 07:12:50) [Clang 13.0.0 (clang-1300.0.29.30)]
+2025-06-14 23:19:47.561 | INFO     | src.server.service.user_service:user_register:17 - 🟢 新增用户:[START] ==> 0x7o7
+2025-06-14 23:19:47.561 | INFO     | src.server.service.user_service:user_register:17 - 🟢 新增用户:[START] ==> 0x7o7
+2025-06-14 23:19:47.824 | INFO     | src.server.service.user_service:user_register:30 - 🟢 新增用户:[END] 结果: SUCCESS!
+2025-06-14 23:19:47.824 | INFO     | src.server.service.user_service:user_register:30 - 🟢 新增用户:[END] 结果: SUCCESS!
