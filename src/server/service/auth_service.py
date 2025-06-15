@@ -14,7 +14,8 @@ def user_login(account: str = Body(..., description="用户名"), password: str 
             if bp.verify_password(password, db_password):
                 token = token_handler.generate_token(account)
                 update_user_to_db(user_obj.id, UpdateUserDto(token=token, last_login_time=dt.datetime))
-                return ApiCommonResponseDTO(message="success").model_dict()
+                return ApiCommonResponseDTO(message="success",
+                                            data={'user_id': user_obj.id, 'token': token}).model_dict()
             else:
                 return ApiCommonResponseDTO(message="账户密码错误").model_dict()
         return
