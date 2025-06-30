@@ -6,13 +6,13 @@ from src.server.db.repository import get_user_id_from_db, update_user_to_db
 from src.server.libs import bp, dt, token_handler
 
 
-def user_login(account: str = Body(..., description="用户名"), password: str = Body(..., description="密码")):
+def user_login(username: str = Body(..., description="用户名"), password: str = Body(..., description="密码")):
     try:
-        logger.info(f"🟢 用户登录:[START] ==> {account}")
-        if user_obj := get_user_id_from_db(account):
+        logger.info(f"🟢 用户登录:[START] ==> {username}")
+        if user_obj := get_user_id_from_db(username):
             db_password = user_obj.password
             if bp.verify_password(password, db_password):
-                token = token_handler.generate_token(account)
+                token = token_handler.generate_token(username)
                 update_user_to_db(user_obj.id, UpdateUserDto(token=token, last_login_time=dt.datetime))
                 return ApiCommonResponseDTO(message="success",
                                             data={'user_id': user_obj.id, 'token': token}).model_dict()
