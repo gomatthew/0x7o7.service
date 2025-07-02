@@ -8,6 +8,6 @@ class BaseModel(Base):
     base model for extend
     """
     __abstract__ = True
-    id = Column(String(64), primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     created_user = Column(String(64), nullable=False, comment="创建人")
     created_time = Column(DateTime, nullable=False, default=func.current_timestamp())
