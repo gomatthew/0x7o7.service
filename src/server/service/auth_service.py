@@ -14,11 +14,14 @@ def user_login(username: str = Body(..., description="用户名"), password: str
             if bp.verify_password(password, db_password):
                 token = token_handler.generate_token(username)
                 update_user_to_db(user_obj.id, UpdateUserDto(token=token, last_login_time=dt.datetime))
+                logger.info(f'🟢 用户登录:[END] ==> {username} 成功!')
                 return ApiCommonResponseDTO(message="success",
                                             data={'user_id': user_obj.id, 'token': token}).model_dict()
             else:
+                logger.info(f'🟢 用户登录:[END] ==> {username} 失败!')
                 return ApiCommonResponseDTO(message="账户密码错误").model_dict()
-        return
+        logger.info(f'🟢 用户登录:[END] ==> {username} 未注册!')
+        return ApiCommonResponseDTO(message="该用户未注册!").model_dict()
     except BaseException as e:
         logger.error("🔴 用户登录:[ERROR]")
         logger.error(e)
