@@ -7,7 +7,7 @@ from fastapi import Body
 from langchain.chains import LLMChain
 from langchain.prompts.chat import ChatPromptTemplate
 from langchain_core.messages import AIMessage, HumanMessage, convert_to_messages
-from sse_starlette.sse import EventSourceResponse
+
 
 from chatchat.settings import Settings
 from chatchat.server.agent.agent_factory.agents_registry import agents_registry
