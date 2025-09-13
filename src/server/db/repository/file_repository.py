@@ -19,3 +19,11 @@ def add_file_to_db(session, file_dto: AddFileToDBDTO):
     new_file_orm.created_user_name = file_dto.created_user_name
     session.add(new_file_orm)
     session.commit()
+
+
+@with_session
+def get_file_by_id(session, file_id: str):
+    if q := session.query(FileModel).filter(FileModel.id == file_id).one():
+        return {'file_name': q.file_name}
+    else:
+        return None

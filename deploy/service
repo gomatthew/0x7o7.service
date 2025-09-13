@@ -1,0 +1,10 @@
+Minio docker
+docker run -d \
+  --name minio \
+  -p 9000:9000 \
+  -p 9091:9091 \
+  -e "MINIO_ROOT_USER=0x7o7-always-win" \
+  -e "MINIO_ROOT_PASSWORD=e80f0e6abc3e4e9b8d137ce1a23f687e" \
+  -v /Users/0x7o7/0x7o7_workspace/minio/data:/data \
+  -v /Users/0x7o7/0x7o7_workspace/minio/config:/root/.minio \
+  minio/minio server /data --console-address ":9091"
