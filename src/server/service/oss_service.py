@@ -55,9 +55,10 @@ def download_file(bucket_name: Optional[str] = Query(setting.MINIO_BUCKET),
     if content := minio_instance.download_minio(file_id):
         file_obj = get_file_by_id(file_id)
         file_name = file_obj.get('file_name')
+        # base64_str = base64.b64encode(content).decode('utf-8')
         logger.info('🟢 文件下载[END]')
         return StreamingResponse(
-            content,
+            content=content,
             media_type="application/octet-stream",  # 或者根据需要设置 'image/png', 'application/pdf'
             headers={"Content-Disposition": f"attachment; filename={quote(file_name)}"}
         )
