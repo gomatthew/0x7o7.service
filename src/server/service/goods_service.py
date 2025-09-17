@@ -11,3 +11,10 @@ def get_goods_list(user_id: str = Query(..., description='')):
             {'good_id': '47fc4a922c8649568ed68afac5e62bf7', 'good_name': '鸭梨🍐'}]
     logger.info(f'🟢 获得产品List[END]')
     return ApiCommonResponseDTO(data=data).model_dict()
+
+
+def get_goods_detail(goods_id: str = Query(..., description='商品id')):
+    logger.info(f'🟢 获得产品Detail[START]:{goods_id}]')
+    data = [{'goods_id': goods_id}]
+    logger.info(f'🟢 获得产品Detail[END]:{goods_id}]')
+    return ApiCommonResponseDTO(data=data).model_dict()

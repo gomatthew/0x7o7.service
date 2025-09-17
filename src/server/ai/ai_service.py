@@ -5,14 +5,13 @@ from typing import AsyncIterable, List
 
 from fastapi import Body
 from langchain.chains import LLMChain
-from langchain.prompts.chat import ChatPromptTemplate
 from langchain_core.messages import AIMessage, HumanMessage, convert_to_messages
 
 
-from chatchat.settings import Settings
-from chatchat.server.agent.agent_factory.agents_registry import agents_registry
-from chatchat.server.api_server.api_schemas import OpenAIChatOutput
-from chatchat.server.callback_handler.agent_callback_handler import (
+
+from src.server.ai.agent.agents_registry import agents_registry
+from src.server.dto.response_dto import OpenAIOutputDTO
+from src.server.ai.callback_handler.agent_callback_handler import (
     AgentExecutorAsyncIteratorCallbackHandler,
     AgentStatus,
 )
@@ -31,72 +30,12 @@ from chatchat.server.utils import (
 )
 
 
+
 logger = build_logger()
 
 
-def create_models_from_config(configs, callbacks, stream, max_tokens):
-    configs = configs or Settings.model_settings.LLM_MODEL_CONFIG
-    models = {}
-    prompts = {}
-    for model_type, params in configs.items():
-        model_name = params.get("model", "").strip() or get_default_llm()
-        callbacks = callbacks if params.get("callbacks", False) else None
-        # 判断是否传入 max_tokens 的值, 如果传入就按传入的赋值(api 调用且赋值), 如果没有传入则按照初始化配置赋值(ui 调用或 api 调用未赋值)
-        max_tokens_value = max_tokens if max_tokens is not None else params.get("max_tokens", 1000)
-        model_instance = get_ChatOpenAI(
-            model_name=model_name,
-            temperature=params.get("temperature", 0.5),
-            max_tokens=max_tokens_value,
-            callbacks=callbacks,
-            streaming=stream,
-            local_wrap=True,
-        )
-        models[model_type] = model_instance
-        prompt_name = params.get("prompt_name", "default")
-        prompt_template = get_prompt_template(type=model_type, name=prompt_name)
-        prompts[model_type] = prompt_template
-    return models, prompts
 
 
-def create_models_chains(
-    history, history_len, prompts, models, tools, callbacks, conversation_id, metadata
-):
-    memory = None
-    chat_prompt = None
-
-    if history:
-        history = [History.from_data(h) for h in history]
-        input_msg = History(role="user", content=prompts["llm_model"]).to_msg_template(
-            False
-        )
-        chat_prompt = ChatPromptTemplate.from_messages(
-            [i.to_msg_template() for i in history] + [input_msg]
-        )
-    elif conversation_id and history_len > 0:
-        memory = ConversationBufferDBMemory(
-            conversation_id=conversation_id,
-            llm=models["llm_model"],
-            message_limit=history_len,
-        )
-    else:
-        input_msg = History(role="user", content=prompts["llm_model"]).to_msg_template(
-            False
-        )
-        chat_prompt = ChatPromptTemplate.from_messages([input_msg])
-
-    if "action_model" in models and tools:
-        llm = models["action_model"]
-        llm.callbacks = callbacks
-        agent_executor = agents_registry(
-            llm=llm, callbacks=callbacks, tools=tools, prompt=None, verbose=True
-        )
-        full_chain = {"input": lambda x: x["input"]} | agent_executor
-    else:
-        llm = models["llm_model"]
-        llm.callbacks = callbacks
-        chain = LLMChain(prompt=chat_prompt, llm=llm, memory=memory)
-        full_chain = {"input": lambda x: x["input"]} | chain
-    return full_chain
 
 
 async def chat(

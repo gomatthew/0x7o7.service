@@ -23,3 +23,7 @@ class ApiCommonResponseDTO(BaseResponseDTO):
 
     def model_dict(self):
         return {'status': self.status, 'message': self.message, 'data': self.data}
+
+
+class OpenAIOutputDTO(BaseResponseDTO):
+    ...
