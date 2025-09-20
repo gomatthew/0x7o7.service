@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
-from typing import Union, List, Tuple, Dict
+import asyncio
+from typing import Union, List, Tuple, Dict, Awaitable
 from pydantic import BaseModel, Field
-
-from src.configs import get_setting
-from src.enum import ModelTypeEnum
+from langchain.chains import LLMChain
 from langchain_openai.chat_models import ChatOpenAI
-from langchain.prompts.chat import ChatMessagePromptTemplate
+from langchain.prompts.chat import ChatMessagePromptTemplate, ChatPromptTemplate
+
+from src.configs import get_setting, logger
+from src.enum import ModelTypeEnum
+from src.server.ai.agent.agents_registry import agents_registry
+from src.server.ai.memory.memory import ConversationBufferDBMemory
 
 setting = get_setting()
 llm_setting = setting.LLM_SETTING
@@ -24,7 +28,7 @@ def get_model_info(model_name: str, model_type: str = ModelTypeEnum.LLM) -> dict
     return dict()
 
 
-def generate_llm_instance(llm_model_name: str, temperature: float = setting.DEFAULT_TEMPERATURE,
+def generate_llm_instance(llm_model_name: str = setting.DEFAULT_LLM, temperature: float = setting.DEFAULT_TEMPERATURE,
                           verbose: bool = setting.DEFAULT_VERBOSE, streaming: bool = setting.DEFAULT_STREAM,
                           max_tokens: int = setting.MAX_TOKENS, callbacks: list = None) -> ChatOpenAI:
     """获取模型配置信息"""
@@ -75,42 +79,55 @@ class History(BaseModel):
             h = cls(**h)
         return h
 
-# def create_models_chains(
-#     history, history_len, prompts, models, tools, callbacks, conversation_id, metadata
-# ):
-#     memory = None
-#     chat_prompt = None
-#
-#     if history:
-#         history = [History.from_data(h) for h in history]
-#         input_msg = History(role="user", content=prompts["llm_model"]).to_msg_template(
-#             False
-#         )
-#         chat_prompt = ChatPromptTemplate.from_messages(
-#             [i.to_msg_template() for i in history] + [input_msg]
-#         )
-#     elif conversation_id and history_len > 0:
-#         memory = ConversationBufferDBMemory(
-#             conversation_id=conversation_id,
-#             llm=models["llm_model"],
-#             message_limit=history_len,
-#         )
-#     else:
-#         input_msg = History(role="user", content=prompts["llm_model"]).to_msg_template(
-#             False
-#         )
-#         chat_prompt = ChatPromptTemplate.from_messages([input_msg])
-#
-#     if "action_model" in models and tools:
-#         llm = models["action_model"]
-#         llm.callbacks = callbacks
-#         agent_executor = agents_registry(
-#             llm=llm, callbacks=callbacks, tools=tools, prompt=None, verbose=True
-#         )
-#         full_chain = {"input": lambda x: x["input"]} | agent_executor
-#     else:
-#         llm = models["llm_model"]
-#         llm.callbacks = callbacks
-#         chain = LLMChain(prompt=chat_prompt, llm=llm, memory=memory)
-#         full_chain = {"input": lambda x: x["input"]} | chain
-#     return full_chain
+
+def create_models_chains(
+        history, history_len, prompts, models, tools, callbacks, conversation_id, metadata
+):
+    memory = None
+    chat_prompt = None
+
+    if history:
+        history = [History.from_data(h) for h in history]
+        input_msg = History(role="user", content=prompts["llm_model"]).to_msg_template(
+            False
+        )
+        chat_prompt = ChatPromptTemplate.from_messages(
+            [i.to_msg_template() for i in history] + [input_msg]
+        )
+    elif conversation_id and history_len > 0:
+        memory = ConversationBufferDBMemory(
+            conversation_id=conversation_id,
+            llm=models["llm_model"],
+            message_limit=history_len,
+        )
+    else:
+        input_msg = History(role="user", content=prompts["llm_model"]).to_msg_template(
+            False
+        )
+        chat_prompt = ChatPromptTemplate.from_messages([input_msg])
+
+    if "action_model" in models and tools:
+        llm = models["action_model"]
+        llm.callbacks = callbacks
+        agent_executor = agents_registry(
+            llm=llm, callbacks=callbacks, tools=tools, prompt=None, verbose=True
+        )
+        full_chain = {"input": lambda x: x["input"]} | agent_executor
+    else:
+        llm = models["llm_model"]
+        llm.callbacks = callbacks
+        chain = LLMChain(prompt=chat_prompt, llm=llm, memory=memory)
+        full_chain = {"input": lambda x: x["input"]} | chain
+    return full_chain
+
+
+async def wrap_done(fn: Awaitable, event: asyncio.Event):
+    """Wrap an awaitable with a event to signal when it's done or an exception is raised."""
+    try:
+        await fn
+    except Exception as e:
+        msg = f"Caught exception: {e}"
+        logger.error(f"{e.__class__.__name__}: {msg}")
+    finally:
+        # Signal the aiter to stop.
+        event.set()

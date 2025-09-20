@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 from functools import partial
 from operator import itemgetter
@@ -23,11 +22,12 @@ from langchain.tools.base import BaseTool
 from langchain_core.callbacks import Callbacks
 from langchain_core.runnables import Runnable, RunnablePassthrough
 
-from src.server.utils import get_prompt_template
-from src.utils import build_logger
+from src.server.ai.prompt.prompt import prompt_dict
 
 
-logger = build_logger()
+
+
+
 
 
 # langchain's AgentRunnable use .stream to make sure .stream_log working.
@@ -183,7 +183,7 @@ def create_structured_qwen_chat_agent(
         output_parser = QwenChatAgentOutputParserLC()
 
     tools = [t.copy(update={"callbacks": callbacks}) for t in tools]
-    template = get_prompt_template("action_model", prompt)
+    template = prompt_dict.get('llm_chat_default')
     prompt = QwenChatAgentPromptTemplate(
         input_variables=["input", "intermediate_steps"], template=template, tools=tools
     )

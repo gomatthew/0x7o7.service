@@ -6,62 +6,42 @@ from typing import AsyncIterable, List
 from fastapi import Body
 from langchain.chains import LLMChain
 from langchain_core.messages import AIMessage, HumanMessage, convert_to_messages
+from sse_starlette.sse import EventSourceResponse
 
-
-
+from src.configs import logger
 from src.server.ai.agent.agents_registry import agents_registry
 from src.server.dto.response_dto import OpenAIOutputDTO
-from src.server.ai.callback_handler.agent_callback_handler import (
-    AgentExecutorAsyncIteratorCallbackHandler,
-    AgentStatus,
-)
-from chatchat.server.chat.utils import History
-from chatchat.server.memory.conversation_db_buffer_memory import (
-    ConversationBufferDBMemory,
-)
-from chatchat.server.utils import (
-    MsgType,
-    get_ChatOpenAI,
-    get_prompt_template,
-    get_tool,
-    wrap_done,
-    get_default_llm,
-    build_logger,
-)
+from src.server.ai.callback_handler.agent_callback_handler import AgentExecutorAsyncIteratorCallbackHandler, AgentStatus
 
-
-
-logger = build_logger()
-
-
-
-
+from src.enum.emuns import MessageTypeEnum
+from src.server.ai.llm_utils import History, generate_llm_instance, create_models_chains, wrap_done
+from src.server.ai.prompt.prompt import prompt_dict
 
 
 async def chat(
-    query: str = Body(..., description="用户输入", examples=["恼羞成怒"]),
-    metadata: dict = Body({}, description="附件，可能是图像或者其他功能", examples=[]),
-    conversation_id: str = Body("", description="对话框ID"),
-    message_id: str = Body(None, description="数据库消息ID"),
-    history_len: int = Body(-1, description="从数据库中取历史消息的数量"),
-    history: List[History] = Body(
-        [],
-        description="历史对话，设为一个整数可以从数据库中读取历史消息",
-        examples=[
-            [
-                {"role": "user", "content": "我们来玩成语接龙，我先来，生龙活虎"},
-                {"role": "assistant", "content": "虎头虎脑"},
-            ]
-        ],
-    ),
-    stream: bool = Body(True, description="流式输出"),
-    chat_model_config: dict = Body({}, description="LLM 模型配置", examples=[]),
-    tool_config: dict = Body({}, description="工具配置", examples=[]),
-    max_tokens: int = Body(None, description="LLM最大token数配置", example=4096),
+        query: str = Body(..., description="用户输入", examples=["恼羞成怒"]),
+        metadata: dict = Body({}, description="附件，可能是图像或者其他功能", examples=[]),
+        conversation_id: str = Body("", description="对话框ID"),
+        message_id: str = Body(None, description="数据库消息ID"),
+        history_len: int = Body(-1, description="从数据库中取历史消息的数量"),
+        history: List[History] = Body(
+            [],
+            description="历史对话，设为一个整数可以从数据库中读取历史消息",
+            examples=[
+                [
+                    {"role": "user", "content": "我们来玩成语接龙，我先来，生龙活虎"},
+                    {"role": "assistant", "content": "虎头虎脑"},
+                ]
+            ],
+        ),
+        stream: bool = Body(True, description="流式输出"),
+        chat_model_config: dict = Body({}, description="LLM 模型配置", examples=[]),
+        tool_config: dict = Body({}, description="工具配置", examples=[]),
+        max_tokens: int = Body(None, description="LLM最大token数配置", example=4096),
 ):
     """Agent 对话"""
 
-    async def chat_iterator() -> AsyncIterable[OpenAIChatOutput]:
+    async def chat_iterator() -> AsyncIterable[OpenAIOutputDTO]:
         try:
             callback = AgentExecutorAsyncIteratorCallbackHandler()
             callbacks = [callback]
@@ -79,15 +59,15 @@ async def chat(
                 langfuse_handler = CallbackHandler()
                 callbacks.append(langfuse_handler)
 
-            models, prompts = create_models_from_config(
-                callbacks=callbacks, configs=chat_model_config, stream=stream, max_tokens=max_tokens
-            )
+            llm_model = generate_llm_instance()
+            prompt = prompt_dict.get('llm_chat_default')
+
             all_tools = get_tool().values()
             tools = [tool for tool in all_tools if tool.name in tool_config]
             tools = [t.copy(update={"callbacks": callbacks}) for t in tools]
             full_chain = create_models_chains(
-                prompts=prompts,
-                models=models,
+                prompts=prompt,
+                models=llm_model,
                 conversation_id=conversation_id,
                 tools=tools,
                 callbacks=callbacks,
@@ -117,7 +97,7 @@ async def chat(
             async for chunk in callback.aiter():
                 data = json.loads(chunk)
                 data["tool_calls"] = []
-                data["message_type"] = MsgType.TEXT
+                data["message_type"] = MessageTypeEnum.TEXT
 
                 if data["status"] == AgentStatus.tool_start:
                     last_tool = {
@@ -196,7 +176,7 @@ async def chat(
             finish_reason="stop",
             tool_calls=[],
             status=AgentStatus.agent_finish,
-            message_type=MsgType.TEXT,
+            message_type=MessageTypeEnum.TEXT,
             message_id=message_id,
         )
 

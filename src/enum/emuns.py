@@ -6,7 +6,11 @@ class ModelTypeEnum(StrEnum):
     LLM = 'llm'
     EMBEDDING = 'embedding'
 
-
+class MessageTypeEnum(StrEnum):
+    TEXT = 'text'
+    IMAGE = 'image'
+    AUDIO = 'audio'
+    VIDEO = 'video'
 
 if __name__ == '__main__':
     a=ModelTypeEnum.LLM
