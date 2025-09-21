@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
 from src.configs.settings import VERSION
-from src.server.api_router import auth_router, user_router, service_router
+from src.server.api_router import auth_router, user_router, service_router, ai_router
 
 
 def create_tables():
@@ -29,4 +29,5 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(user_router)
     app.include_router(service_router)
+    app.include_router(ai_router)
     return app

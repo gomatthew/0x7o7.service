@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from langchain.chains import LLMChain
 from langchain_openai.chat_models import ChatOpenAI
 from langchain.prompts.chat import ChatMessagePromptTemplate, ChatPromptTemplate
-
+from langchain.tools import BaseTool
 from src.configs import get_setting, logger
 from src.enum import ModelTypeEnum
 from src.server.ai.agent.agents_registry import agents_registry
@@ -131,3 +131,14 @@ async def wrap_done(fn: Awaitable, event: asyncio.Event):
     finally:
         # Signal the aiter to stop.
         event.set()
+
+
+def get_tool(name: str = None) -> Union[BaseTool, Dict[str, BaseTool]]:
+    import importlib
+
+    from src.server.ai.agent.tools import tools_registry
+
+    if name is None:
+        return tools_registry._TOOLS_REGISTRY
+    else:
+        return tools_registry._TOOLS_REGISTRY.get(name)

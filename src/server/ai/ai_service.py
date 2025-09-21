@@ -14,7 +14,7 @@ from src.server.dto.response_dto import OpenAIOutputDTO
 from src.server.ai.callback_handler.agent_callback_handler import AgentExecutorAsyncIteratorCallbackHandler, AgentStatus
 
 from src.enum.emuns import MessageTypeEnum
-from src.server.ai.llm_utils import History, generate_llm_instance, create_models_chains, wrap_done
+from src.server.ai.llm_utils import History, generate_llm_instance, create_models_chains, wrap_done, get_tool
 from src.server.ai.prompt.prompt import prompt_dict
 
 
@@ -52,12 +52,12 @@ async def chat(
             langfuse_secret_key = os.environ.get("LANGFUSE_SECRET_KEY")
             langfuse_public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
             langfuse_host = os.environ.get("LANGFUSE_HOST")
-            if langfuse_secret_key and langfuse_public_key and langfuse_host:
-                from langfuse import Langfuse
-                from langfuse.callback import CallbackHandler
-
-                langfuse_handler = CallbackHandler()
-                callbacks.append(langfuse_handler)
+            # if langfuse_secret_key and langfuse_public_key and langfuse_host:
+            #     from langfuse import Langfuse
+            #     from langfuse.callback import CallbackHandler
+            #
+            #     langfuse_handler = CallbackHandler()
+            #     callbacks.append(langfuse_handler)
 
             llm_model = generate_llm_instance()
             prompt = prompt_dict.get('llm_chat_default')
@@ -134,28 +134,15 @@ async def chat(
                         ...
                 text_value = data.get("text", "")
                 content = text_value if isinstance(text_value, str) else str(text_value)
-                ret = OpenAIChatOutput(
-                    id=f"chat{uuid.uuid4()}",
-                    object="chat.completion.chunk",
+                ret = OpenAIOutputDTO(
+                    llm_status=data["status"],
                     content=content,
-                    role="assistant",
-                    tool_calls=data["tool_calls"],
-                    model=models["llm_model"].model_name,
+                    tool=data["tool_calls"],
                     status=data["status"],
-                    message_type=data["message_type"],
                     message_id=message_id,
                 )
-                yield ret.model_dump_json()
-            # yield OpenAIChatOutput( # return blank text lastly
-            #         id=f"chat{uuid.uuid4()}",
-            #         object="chat.completion.chunk",
-            #         content="",
-            #         role="assistant",
-            #         model=models["llm_model"].model_name,
-            #         status = data["status"],
-            #         message_type = data["message_type"],
-            #         message_id=message_id,
-            # )
+                yield ret.model_dict()
+
             await task
         except asyncio.exceptions.CancelledError:
             logger.warning("streaming progress has been interrupted by user.")
@@ -168,16 +155,11 @@ async def chat(
     if stream:
         return EventSourceResponse(chat_iterator())
     else:
-        ret = OpenAIChatOutput(
-            id=f"chat{uuid.uuid4()}",
-            object="chat.completion",
+        ret = OpenAIOutputDTO(
+            message_id=f"chat{uuid.uuid4()}",
             content="",
-            role="assistant",
-            finish_reason="stop",
-            tool_calls=[],
-            status=AgentStatus.agent_finish,
-            message_type=MessageTypeEnum.TEXT,
-            message_id=message_id,
+            tool=[],
+            llm_status=AgentStatus.agent_finish,
         )
 
         async for chunk in chat_iterator():

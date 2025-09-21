@@ -9,9 +9,11 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import BaseTool
 
 from src.server.ai.agent.agent_factory import create_structured_qwen_chat_agent
-from src.server.ai.agent.agent_factory.glm3_agent import (
-    create_structured_glm3_chat_agent,
-)
+
+
+# from src.server.ai.agent.agent_factory.glm3_agent import (
+#     create_structured_glm3_chat_agent,
+# )
 
 
 def agents_registry(
@@ -25,16 +27,16 @@ def agents_registry(
     llm.streaming = False  # qwen agent not support streaming
 
     # Write any optimized method here.
-    if "glm3" in llm.model_name.lower():
-        # An optimized method of langchain Agent that uses the glm3 series model
-        agent = create_structured_glm3_chat_agent(llm=llm, tools=tools)
-
-        agent_executor = AgentExecutor(
-            agent=agent, tools=tools, verbose=verbose, callbacks=callbacks
-        )
-
-        return agent_executor
-    elif "qwen" in llm.model_name.lower():
+    # if "glm3" in llm.model_name.lower():
+    #     # An optimized method of langchain Agent that uses the glm3 series model
+    #     agent = create_structured_glm3_chat_agent(llm=llm, tools=tools)
+    #
+    #     agent_executor = AgentExecutor(
+    #         agent=agent, tools=tools, verbose=verbose, callbacks=callbacks
+    #     )
+    #
+    #     return agent_executor
+    if "qwen" in llm.model_name.lower():
         return create_structured_qwen_chat_agent(
             llm=llm, tools=tools, callbacks=callbacks
         )
