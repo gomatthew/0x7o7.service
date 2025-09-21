@@ -1,5 +1,6 @@
 import asyncio
 import json
+import traceback
 import uuid
 from typing import AsyncIterable, List
 
@@ -7,7 +8,7 @@ from fastapi import Body
 from langchain.chains import LLMChain
 from langchain_core.messages import AIMessage, HumanMessage, convert_to_messages
 from sse_starlette.sse import EventSourceResponse
-
+from langchain.callbacks import AsyncIteratorCallbackHandler
 from src.configs import logger
 from src.server.ai.agent.agents_registry import agents_registry
 from src.server.dto.response_dto import OpenAIOutputDTO
@@ -20,7 +21,7 @@ from src.server.ai.prompt.prompt import prompt_dict
 
 async def chat(
         query: str = Body(..., description="用户输入", examples=["恼羞成怒"]),
-        metadata: dict = Body({}, description="附件，可能是图像或者其他功能", examples=[]),
+        # metadata: dict = Body({}, description="附件，可能是图像或者其他功能", examples=[]),
         conversation_id: str = Body("", description="对话框ID"),
         message_id: str = Body(None, description="数据库消息ID"),
         history_len: int = Body(-1, description="从数据库中取历史消息的数量"),
@@ -73,7 +74,7 @@ async def chat(
                 callbacks=callbacks,
                 history=history,
                 history_len=history_len,
-                metadata=metadata,
+                # metadata=metadata,
             )
 
             _history = [History.from_data(h) for h in history]
@@ -141,7 +142,7 @@ async def chat(
                     status=data["status"],
                     message_id=message_id,
                 )
-                yield ret.model_dict()
+                yield ret.model_dump_json()
 
             await task
         except asyncio.exceptions.CancelledError:
@@ -149,6 +150,7 @@ async def chat(
             return
         except Exception as e:
             logger.error(f"error in chat: {e}")
+            logger.error(traceback.format_exc())
             yield {"data": json.dumps({"error": str(e)})}
             return
 

@@ -6,8 +6,8 @@ from langchain.memory.chat_memory import BaseChatMemory
 from langchain.schema import AIMessage, BaseMessage, HumanMessage, get_buffer_string
 from langchain.schema.language_model import BaseLanguageModel
 
-from src.server.db.models.message_model import MessageModel
-from src.server.db.repository.message_repository import filter_message
+from src.server.db.ai_models.message_model import MessageModel
+from src.server.db.repository.ai_repository import filter_message
 
 
 class ConversationBufferDBMemory(BaseChatMemory):

@@ -73,7 +73,7 @@ class History(BaseModel):
 
     @classmethod
     def from_data(cls, h: Union[List, Tuple, Dict]) -> "History":
-        if isinstance(h, (list, tuple) and len(h) == 2):
+        if isinstance(h, (list, tuple)):
             h = cls(role=h[0], content=h[1])
         elif isinstance(h, dict):
             h = cls(**h)
@@ -81,14 +81,14 @@ class History(BaseModel):
 
 
 def create_models_chains(
-        history, history_len, prompts, models, tools, callbacks, conversation_id, metadata
+        history, history_len, prompts, models, tools, callbacks, conversation_id, metadata=None
 ):
     memory = None
     chat_prompt = None
 
     if history:
         history = [History.from_data(h) for h in history]
-        input_msg = History(role="user", content=prompts["llm_model"]).to_msg_template(
+        input_msg = History(role="user", content=prompts).to_msg_template(
             False
         )
         chat_prompt = ChatPromptTemplate.from_messages(
@@ -97,11 +97,11 @@ def create_models_chains(
     elif conversation_id and history_len > 0:
         memory = ConversationBufferDBMemory(
             conversation_id=conversation_id,
-            llm=models["llm_model"],
+            llm=models,
             message_limit=history_len,
         )
     else:
-        input_msg = History(role="user", content=prompts["llm_model"]).to_msg_template(
+        input_msg = History(role="user", content=prompts).to_msg_template(
             False
         )
         chat_prompt = ChatPromptTemplate.from_messages([input_msg])
@@ -114,8 +114,9 @@ def create_models_chains(
         )
         full_chain = {"input": lambda x: x["input"]} | agent_executor
     else:
-        llm = models["llm_model"]
+        llm = models
         llm.callbacks = callbacks
+        # chain = prompts | memory | llm
         chain = LLMChain(prompt=chat_prompt, llm=llm, memory=memory)
         full_chain = {"input": lambda x: x["input"]} | chain
     return full_chain
