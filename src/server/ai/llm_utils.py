@@ -10,6 +10,7 @@ from src.configs import get_setting, logger
 from src.enum import ModelTypeEnum
 from src.server.ai.agent.agents_registry import agents_registry
 from src.server.ai.memory.memory import ConversationBufferDBMemory
+from langchain_core.runnables.history import RunnableWithMessageHistory
 
 setting = get_setting()
 llm_setting = setting.LLM_SETTING
@@ -116,7 +117,6 @@ def create_models_chains(
     else:
         llm = models
         llm.callbacks = callbacks
-        # chain = prompts | memory | llm
         chain = LLMChain(prompt=chat_prompt, llm=llm, memory=memory)
         full_chain = {"input": lambda x: x["input"]} | chain
     return full_chain

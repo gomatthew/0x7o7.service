@@ -8,7 +8,6 @@ from fastapi import Body
 from langchain.chains import LLMChain
 from langchain_core.messages import AIMessage, HumanMessage, convert_to_messages
 from sse_starlette.sse import EventSourceResponse
-from langchain.callbacks import AsyncIteratorCallbackHandler
 from src.configs import logger
 from src.server.ai.agent.agents_registry import agents_registry
 from src.server.dto.response_dto import OpenAIOutputDTO
