@@ -2,7 +2,7 @@ import asyncio
 import json
 import traceback
 import uuid
-from typing import AsyncIterable, List
+from typing import AsyncIterable, List, Optional
 
 from fastapi import Body
 from langchain.chains import LLMChain
@@ -19,10 +19,9 @@ from src.server.ai.prompt.prompt import prompt_dict
 
 
 async def chat(
-        query: str = Body(..., description="用户输入", examples=["恼羞成怒"]),
+        query: str = Body(None, description="用户输入", examples=["恼羞成怒"]),
         # metadata: dict = Body({}, description="附件，可能是图像或者其他功能", examples=[]),
-        conversation_id: str = Body("", description="对话框ID"),
-        message_id: str = Body(None, description="数据库消息ID"),
+        conversation_id: Optional[str] = Body("", description="对话框ID"),
         history_len: int = Body(-1, description="从数据库中取历史消息的数量"),
         history: List[History] = Body(
             [],
@@ -95,6 +94,7 @@ async def chat(
 
             last_tool = {}
             async for chunk in callback.aiter():
+                message_id = uuid.uuid4().hex
                 data = json.loads(chunk)
                 data["tool_calls"] = []
                 data["message_type"] = MessageTypeEnum.TEXT
