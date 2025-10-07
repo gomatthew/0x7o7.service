@@ -9,57 +9,43 @@ from langchain.chains import LLMChain
 from langchain_core.messages import AIMessage, HumanMessage, convert_to_messages
 from sse_starlette.sse import EventSourceResponse
 from src.configs import logger
-from src.server.ai.agent.agents_registry import agents_registry
 from src.server.dto.response_dto import OpenAIOutputDTO
 from src.server.ai.callback_handler.agent_callback_handler import AgentExecutorAsyncIteratorCallbackHandler, AgentStatus
 
 from src.enum.emuns import MessageTypeEnum
 from src.server.ai.llm_utils import History, generate_llm_instance, create_models_chains, wrap_done, get_tool
 from src.server.ai.prompt.prompt import prompt_dict
+from src.server.db.repository import add_message_to_db, get_chat_history_from_db
 
 
 async def chat(
         query: str = Body(None, description="用户输入", examples=["恼羞成怒"]),
         # metadata: dict = Body({}, description="附件，可能是图像或者其他功能", examples=[]),
         conversation_id: Optional[str] = Body("", description="对话框ID"),
-        history_len: int = Body(-1, description="从数据库中取历史消息的数量"),
-        history: List[History] = Body(
-            [],
-            description="历史对话，设为一个整数可以从数据库中读取历史消息",
-            examples=[
-                [
-                    {"role": "user", "content": "我们来玩成语接龙，我先来，生龙活虎"},
-                    {"role": "assistant", "content": "虎头虎脑"},
-                ]
-            ],
-        ),
+        history_len: int = Body(10, description="从数据库中取历史消息的数量"),
         stream: bool = Body(True, description="流式输出"),
         chat_model_config: dict = Body({}, description="LLM 模型配置", examples=[]),
         tool_config: dict = Body({}, description="工具配置", examples=[]),
         max_tokens: int = Body(None, description="LLM最大token数配置", example=4096),
 ):
     """Agent 对话"""
+    if not conversation_id: conversation_id = uuid.uuid4().hex
+    message_id = uuid.uuid4().hex
 
-    async def chat_iterator() -> AsyncIterable[OpenAIOutputDTO]:
+    async def chat_iterator(conversation_id, message_id) -> AsyncIterable[OpenAIOutputDTO.model_dict]:
         try:
-            callback = AgentExecutorAsyncIteratorCallbackHandler()
+            if not conversation_id:
+                conversation_id = uuid.uuid4().hex
+
+            add_message_to_db(conversation_id=conversation_id, message_id=message_id, query=query, user_id='test')
+            callback = AgentExecutorAsyncIteratorCallbackHandler(message_id=message_id)
             callbacks = [callback]
-
-            # Enable langchain-chatchat to support langfuse
             import os
-
-            langfuse_secret_key = os.environ.get("LANGFUSE_SECRET_KEY")
-            langfuse_public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
-            langfuse_host = os.environ.get("LANGFUSE_HOST")
-            # if langfuse_secret_key and langfuse_public_key and langfuse_host:
-            #     from langfuse import Langfuse
-            #     from langfuse.callback import CallbackHandler
-            #
-            #     langfuse_handler = CallbackHandler()
-            #     callbacks.append(langfuse_handler)
 
             llm_model = generate_llm_instance()
             prompt = prompt_dict.get('llm_chat_default')
+
+            history = get_chat_history_from_db(conversation_id=conversation_id, limit=history_len)
 
             all_tools = get_tool().values()
             tools = [tool for tool in all_tools if tool.name in tool_config]
@@ -154,7 +140,7 @@ async def chat(
             return
 
     if stream:
-        return EventSourceResponse(chat_iterator())
+        return EventSourceResponse(chat_iterator(conversation_id=conversation_id, message_id=message_id))
     else:
         ret = OpenAIOutputDTO(
             message_id=f"chat{uuid.uuid4()}",
@@ -163,7 +149,7 @@ async def chat(
             llm_status=AgentStatus.agent_finish,
         )
 
-        async for chunk in chat_iterator():
+        async for chunk in chat_iterator(conversation_id=conversation_id, message_id=message_id):
             data = json.loads(chunk)
             if text := data["choices"][0]["delta"]["content"]:
                 ret.content += text

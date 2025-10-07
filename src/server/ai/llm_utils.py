@@ -5,11 +5,13 @@ from pydantic import BaseModel, Field
 from langchain.chains import LLMChain
 from langchain_openai.chat_models import ChatOpenAI
 from langchain.prompts.chat import ChatMessagePromptTemplate, ChatPromptTemplate
+from langchain.prompts import PromptTemplate
 from langchain.tools import BaseTool
 from src.configs import get_setting, logger
 from src.enum import ModelTypeEnum
 from src.server.ai.agent.agents_registry import agents_registry
 from src.server.ai.memory.memory import ConversationBufferDBMemory
+from src.server.ai.prompt.prompt import prompt_dict
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
 setting = get_setting()
@@ -85,7 +87,7 @@ def create_models_chains(
         history, history_len, prompts, models, tools, callbacks, conversation_id, metadata=None
 ):
     memory = None
-    chat_prompt = None
+    chat_prompt = PromptTemplate.from_template(prompt_dict.get('llm_chat_default'), template_format="jinja2")
 
     if history:
         history = [History.from_data(h) for h in history]

@@ -10,6 +10,8 @@ from langchain.callbacks import AsyncIteratorCallbackHandler
 from langchain.schema import AgentAction, AgentFinish
 from langchain_core.outputs import LLMResult
 
+from src.server.db.repository import update_message
+from src.configs import logger
 
 def dumps(obj: Dict) -> str:
     return json.dumps(obj, ensure_ascii=False)
@@ -27,11 +29,12 @@ class AgentStatus():
 
 
 class AgentExecutorAsyncIteratorCallbackHandler(AsyncIteratorCallbackHandler):
-    def __init__(self) -> None:
+    def __init__(self, message_id) -> None:
         super().__init__()
         self.queue = asyncio.Queue()
         self.done = asyncio.Event()
         self.out = True
+        self.message_id = message_id
 
     async def on_llm_start(self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any) -> None:
         data = {"status": AgentStatus.llm_start, "text": ""}
@@ -73,6 +76,8 @@ class AgentExecutorAsyncIteratorCallbackHandler(AsyncIteratorCallbackHandler):
             "status": AgentStatus.llm_end,
             "text": response.generations[0][0].message.content,
         }
+        # logger.info(response.generations[0][0].message.content.strip())
+        update_message(message_id=self.message_id, ai_response=response.generations[0][0].message.content.strip())
         self.queue.put_nowait(dumps(data))
 
     async def on_llm_error(self, error: Exception | KeyboardInterrupt, **kwargs: Any) -> None:
@@ -100,15 +105,14 @@ class AgentExecutorAsyncIteratorCallbackHandler(AsyncIteratorCallbackHandler):
         data = {"run_id": str(run_id), "status": AgentStatus.tool_end, "tool_output": output}
         self.queue.put_nowait(dumps(data))
 
-
     async def on_tool_error(
-        self,
-        error: BaseException,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        tags: Optional[List[str]] = None,
-        **kwargs: Any,
+            self,
+            error: BaseException,
+            *,
+            run_id: UUID,
+            parent_run_id: Optional[UUID] = None,
+            tags: Optional[List[str]] = None,
+            **kwargs: Any,
     ) -> None:
         """Run when tool errors."""
         data = {
@@ -121,13 +125,13 @@ class AgentExecutorAsyncIteratorCallbackHandler(AsyncIteratorCallbackHandler):
         self.queue.put_nowait(dumps(data))
 
     async def on_agent_action(
-        self,
-        action: AgentAction,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        tags: Optional[List[str]] = None,
-        **kwargs: Any,
+            self,
+            action: AgentAction,
+            *,
+            run_id: UUID,
+            parent_run_id: Optional[UUID] = None,
+            tags: Optional[List[str]] = None,
+            **kwargs: Any,
     ) -> None:
         data = {
             "status": AgentStatus.agent_action,
@@ -138,13 +142,13 @@ class AgentExecutorAsyncIteratorCallbackHandler(AsyncIteratorCallbackHandler):
         self.queue.put_nowait(dumps(data))
 
     async def on_agent_finish(
-        self,
-        finish: AgentFinish,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        tags: Optional[List[str]] = None,
-        **kwargs: Any,
+            self,
+            finish: AgentFinish,
+            *,
+            run_id: UUID,
+            parent_run_id: Optional[UUID] = None,
+            tags: Optional[List[str]] = None,
+            **kwargs: Any,
     ) -> None:
         if "Thought:" in finish.return_values["output"]:
             finish.return_values["output"] = finish.return_values["output"].replace(
@@ -155,16 +159,17 @@ class AgentExecutorAsyncIteratorCallbackHandler(AsyncIteratorCallbackHandler):
             "status": AgentStatus.agent_finish,
             "text": finish.return_values["output"],
         }
+        # add_message_to_db(message_id=self.message_id, ai_response=data)
         self.queue.put_nowait(dumps(data))
 
     async def on_chain_end(
-        self,
-        outputs: Dict[str, Any],
-        *,
-        run_id: UUID,
-        parent_run_id: UUID | None = None,
-        tags: List[str] | None = None,
-        **kwargs: Any,
+            self,
+            outputs: Dict[str, Any],
+            *,
+            run_id: UUID,
+            parent_run_id: UUID | None = None,
+            tags: List[str] | None = None,
+            **kwargs: Any,
     ) -> None:
         self.done.set()
         self.out = True

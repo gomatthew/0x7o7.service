@@ -10,7 +10,7 @@ class MessageModel(Base):
     """
 
     __tablename__ = "ai_message"
-    id = Column(String(64), primary_key=True, comment="聊天记录ID")
+    message_id = Column(String(64), primary_key=True, comment="聊天记录ID")
     conversation_id = Column(String(64), default=None, index=True, comment="对话框ID")
     # chat_type = Column(String(50), comment="聊天类型")
     user_query = Column(String(4096), comment="用户问题")
