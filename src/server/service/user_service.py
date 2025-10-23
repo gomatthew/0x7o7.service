@@ -30,9 +30,9 @@ def user_register(user_nickname: str = Body(..., description="用户昵称"),
             logger.info("🟢 新增用户:[END] 结果: SUCCESS!")
             return ApiCommonResponseDTO(message="success", data={'user_id': user_id, 'token': ''}).model_dict()
         logger.info(f"🟢 新增用户:[END] 结果: {check_info}")
-        return ApiCommonResponseDTO(message=check_info).model_dict()
+        return ApiCommonResponseDTO(message=check_info, data={}).model_dict()
     except BaseException as e:
         logger.error("🔴 新增用户:[ERROR]")
         logger.error(e)
         logger.error(traceback.format_exc())
-        return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        return ApiCommonResponseDTO(status=500, message="fail", data={}).model_dict()

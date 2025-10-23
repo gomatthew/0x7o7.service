@@ -26,8 +26,7 @@ async def chat(
         stream: bool = Body(True, description="流式输出"),
         chat_model_config: dict = Body({}, description="LLM 模型配置", examples=[]),
         tool_config: dict = Body({}, description="工具配置", examples=[]),
-        max_tokens: int = Body(None, description="LLM最大token数配置", example=4096),
-):
+        max_tokens: int = Body(None, description="LLM最大token数配置", example=4096)):
     """Agent 对话"""
     if not conversation_id: conversation_id = uuid.uuid4().hex
     message_id = uuid.uuid4().hex

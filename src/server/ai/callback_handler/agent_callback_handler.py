@@ -17,7 +17,7 @@ def dumps(obj: Dict) -> str:
     return json.dumps(obj, ensure_ascii=False)
 
 
-class AgentStatus():
+class AgentStatus:
     llm_start: int = 1
     llm_new_token: int = 2
     llm_end: int = 3
