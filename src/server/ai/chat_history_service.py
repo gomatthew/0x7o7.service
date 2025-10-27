@@ -17,7 +17,7 @@ async def get_chat_history_detail():
     """
     获取聊天记录详情
     """
-    if _conversation_list := get_chat_history_list_from_db():
+    if _conversation_list := get_chat_history_detail_from_db():
         return ApiCommonResponseDTO(data=_conversation_list).model_dict()
     else:
         return ApiCommonResponseDTO(data={}).model_dict()

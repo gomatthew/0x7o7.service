@@ -15,7 +15,7 @@ from src.server.ai.callback_handler.agent_callback_handler import AgentExecutorA
 from src.enum.emuns import MessageTypeEnum
 from src.server.ai.llm_utils import History, generate_llm_instance, create_models_chains, wrap_done, get_tool
 from src.server.ai.prompt.prompt import prompt_dict
-from src.server.db.repository import add_message_to_db, get_chat_history_from_db
+from src.server.db.repository import add_message_to_db, get_chat_history_detail_from_db
 
 
 async def chat(
@@ -44,7 +44,7 @@ async def chat(
             llm_model = generate_llm_instance()
             prompt = prompt_dict.get('llm_chat_default')
 
-            history = get_chat_history_from_db(conversation_id=conversation_id, limit=history_len)
+            history = get_chat_history_detail_from_db(conversation_id=conversation_id, limit=history_len)
 
             all_tools = get_tool().values()
             tools = [tool for tool in all_tools if tool.name in tool_config]
