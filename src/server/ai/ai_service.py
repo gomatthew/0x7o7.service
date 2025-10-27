@@ -2,23 +2,26 @@ import asyncio
 import json
 import traceback
 import uuid
-from typing import AsyncIterable, List, Optional
+from typing import AsyncIterable, Optional
 
 from fastapi import Body
 from langchain.chains import LLMChain
 from langchain_core.messages import AIMessage, HumanMessage, convert_to_messages
 from sse_starlette.sse import EventSourceResponse
 from src.configs import logger
+from src.server.dto import ApiCommonResponseDTO
 from src.server.dto.response_dto import OpenAIOutputDTO
 from src.server.ai.callback_handler.agent_callback_handler import AgentExecutorAsyncIteratorCallbackHandler, AgentStatus
 
 from src.enum.emuns import MessageTypeEnum
 from src.server.ai.llm_utils import History, generate_llm_instance, create_models_chains, wrap_done, get_tool
 from src.server.ai.prompt.prompt import prompt_dict
-from src.server.db.repository import add_message_to_db, get_chat_history_detail_from_db
+from src.server.db.repository import add_message_to_db, get_chat_history_detail_from_db, add_conversation_to_db
+from src.server.utils import TokenChecker
 
 
 async def chat(
+        token_checker: TokenChecker,
         query: str = Body(None, description="用户输入", examples=["恼羞成怒"]),
         # metadata: dict = Body({}, description="附件，可能是图像或者其他功能", examples=[]),
         conversation_id: Optional[str] = Body("", description="对话框ID"),
@@ -28,8 +31,10 @@ async def chat(
         tool_config: dict = Body({}, description="工具配置", examples=[]),
         max_tokens: int = Body(None, description="LLM最大token数配置", example=4096)):
     """Agent 对话"""
-    if not conversation_id: conversation_id = uuid.uuid4().hex
     message_id = uuid.uuid4().hex
+    if not token_checker:
+        return ApiCommonResponseDTO(message="用户未登录!").model_dict()
+    if not conversation_id: conversation_id = add_conversation_to_db(title=query, user_id=token_checker)
 
     async def chat_iterator(conversation_id, message_id) -> AsyncIterable[OpenAIOutputDTO.model_dict]:
         try:

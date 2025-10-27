@@ -18,7 +18,7 @@ class BaseResponseDTO(BaseModel):
 
 
 class ApiCommonResponseDTO(BaseResponseDTO):
-    data: Any = Field({}, description="返回数据")
+    data: Any = Field(default={}, description="返回数据")
 
     def model_dict(self):
         return {'status': self.status, 'message': self.message, 'data': self.data}
