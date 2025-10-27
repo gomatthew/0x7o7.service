@@ -19,11 +19,11 @@ def user_login(username: str = Body(..., description="用户名"), password: str
                                             data={'user_id': user_obj.id, 'token': token}).model_dict()
             else:
                 logger.info(f'🟢 用户登录:[END] ==> {username} 失败!')
-                return ApiCommonResponseDTO(message="账户密码错误").model_dict()
+                return ApiCommonResponseDTO(message="账户密码错误", data={}).model_dict()
         logger.info(f'🟢 用户登录:[END] ==> {username} 未注册!')
-        return ApiCommonResponseDTO(message="该用户未注册!").model_dict()
+        return ApiCommonResponseDTO(message="该用户未注册!", data={}).model_dict()
     except BaseException as e:
         logger.error("🔴 用户登录:[ERROR]")
         logger.error(e)
         logger.error(traceback.format_exc())
-        return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        return ApiCommonResponseDTO(status=500, message="fail", data={}).model_dict()

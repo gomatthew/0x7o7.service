@@ -6,10 +6,10 @@ from src.server.db.base import Base
 
 class MessageModel(Base):
     """
-    聊天记录模型
+    聊天记录详情
     """
 
-    __tablename__ = "ai_message"
+    __tablename__ = "conversation_message"
     message_id = Column(String(64), primary_key=True, comment="聊天记录ID")
     conversation_id = Column(String(64), default=None, index=True, comment="对话框ID")
     # chat_type = Column(String(50), comment="聊天类型")
