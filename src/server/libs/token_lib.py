@@ -25,7 +25,7 @@ class TokenHandleJWT(object):
 
             token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
 
-            return token
+            return token, settings.TOKEN_EXPIRE_HOURS
 
         except Exception as e:
             return e
