@@ -5,7 +5,7 @@ from src.server.libs.token_lib import token_handler
 
 
 def token_identify(request: Request):
-    auth = request.headers.get("Authorization")
+    auth = request.cookies.get('Authorization')
     if checkout := token_handler.verify_token(auth):
         return checkout.get('data').get('id')
     else:

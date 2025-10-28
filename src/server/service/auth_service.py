@@ -13,11 +13,11 @@ def user_login(response: Response, username: str = Body(..., description="用户
         if user_obj := get_user_id_from_db(username):
             db_password = user_obj.password
             if bp.verify_password(password, db_password):
-                token, expire_hours = token_handler.generate_token(username)
+                token, expire_hours = token_handler.generate_token(user_obj.id)
                 update_user_to_db(user_obj.id, UpdateUserDto(token=token, last_login_time=dt.datetime))
                 logger.info(f'🟢 用户登录:[END] ==> {username} 成功!')
                 response.set_cookie(
-                    key="token",
+                    key="Authorization",
                     value=token,
                     httponly=True,  # JS 无法访问
                     secure=False,  # 生产环境 HTTPS 设置 True

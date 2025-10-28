@@ -80,6 +80,7 @@ def add_message_to_db(session, conversation_id=None, message_id=None, query=None
 @with_session
 def add_conversation_to_db(session, title=None, llm_model=None, user_id=None):
     new_conversation = ConversationModel()
+    new_conversation.conversation_id = uuid.uuid4().hex
     new_conversation.title = title
     new_conversation.llm_model = llm_model
     new_conversation.user_id = user_id

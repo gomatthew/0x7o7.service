@@ -2,7 +2,7 @@
 import datetime
 import jwt
 from src.configs import get_setting
-from src.server.db.repository import get_user_by_id
+from src.server.db.repository import get_user_token_by_id
 
 settings = get_setting()
 
@@ -39,17 +39,17 @@ class TokenHandleJWT(object):
             return None
 
         try:
-            payload = jwt.decode(token, settings.SECRET_KEY)
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
 
             if payload is None:
                 return None
 
             user_id = payload['data']['id']
-            user = get_user_by_id(user_id)
-            if user.token is None:
+            user_db_token = get_user_token_by_id(user_id)
+            if user_db_token is None:
                 return None
 
-            if user.token != token:
+            if user_db_token != token:
                 return None
 
             return payload
@@ -161,3 +161,7 @@ class TokenHandleJWT(object):
 
 
 token_handler = TokenHandleJWT()
+if __name__ == '__main__':
+    t = token_handler.generate_token('e7b31999f47742928f744b262316a80d')
+    print(t)
+    print(token_handler.verify_token(t[0]))

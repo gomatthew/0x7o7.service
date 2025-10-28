@@ -41,7 +41,7 @@ async def chat(
             if not conversation_id:
                 conversation_id = uuid.uuid4().hex
 
-            add_message_to_db(conversation_id=conversation_id, message_id=message_id, query=query, user_id='test')
+            add_message_to_db(conversation_id=conversation_id, message_id=message_id, query=query, user_id=token_checker)
             callback = AgentExecutorAsyncIteratorCallbackHandler(message_id=message_id)
             callbacks = [callback]
             import os
@@ -49,7 +49,7 @@ async def chat(
             llm_model = generate_llm_instance()
             prompt = prompt_dict.get('llm_chat_default')
 
-            history = get_chat_history_detail_from_db(conversation_id=conversation_id, limit=history_len)
+            history = get_chat_history_detail_from_db(conversation_id=conversation_id)
 
             all_tools = get_tool().values()
             tools = [tool for tool in all_tools if tool.name in tool_config]

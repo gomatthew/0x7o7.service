@@ -19,14 +19,16 @@ def user_register(user_nickname: str = Body(..., description="用户昵称"),
         check_info, check_tag = user_checkin_from_db(user_phone=phone, user_email=mail)
         if check_tag:
             # 新增用户
-            user_id = uuid.uuid4().hex
+            # user_id = uuid.uuid4().hex
             user_hash_password = bp.hash_password(user_password)
-            user_obj = AddUserDto(id=user_id, user_nick_name=user_nickname,
+            user_obj = AddUserDto(
+                # id=user_id,
+                                  user_nick_name=user_nickname,
                                   phone_number=phone,
                                   mail=mail,
                                   password=user_hash_password,
                                   created_user='admin')
-            add_user(user_obj)
+            user_id = add_user(user_obj)
             logger.info("🟢 新增用户:[END] 结果: SUCCESS!")
             return ApiCommonResponseDTO(message="success", data={'user_id': user_id, 'token': ''}).model_dict()
         logger.info(f"🟢 新增用户:[END] 结果: {check_info}")

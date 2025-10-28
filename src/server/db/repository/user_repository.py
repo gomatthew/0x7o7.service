@@ -36,11 +36,21 @@ def update_user_to_db(session, user_id, new_user: UpdateUserDto) -> (str, bool):
 
 @with_session
 def add_user(session, user_obj: AddUserDto):
-    session.add(UserModel(**user_obj.model_dump()))
+    _user = UserModel(**user_obj.model_dump())
+    session.add(_user)
+    session.flush()
+    return _user.id
 
 
 @with_session
 def get_user_by_id(session, user_id: str) -> UserModel | None:
     if user_obj := session.query(UserModel).filter(and_(UserModel.id == user_id, UserModel.status == 1)).first():
         return user_obj
+    return None
+
+
+@with_session
+def get_user_token_by_id(session, user_id: str) -> str | None:
+    if user_obj := session.query(UserModel).filter(UserModel.id == user_id).first():
+        return user_obj.token
     return None

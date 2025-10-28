@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 
 class UserDto(BaseModel):
-    id: str = Field(..., description="id")
+    id: int = Field(..., description="id")
     user_nick_name: str = Field(..., max_length=32, description="用户昵称")
     phone_number: Optional[str] = Field(None, max_length=11, description="手机号")
     password: str = Field(..., description="密码")
@@ -17,7 +17,7 @@ class UserDto(BaseModel):
 
 
 class AddUserDto(BaseModel):
-    id: str
+    # id: str
     user_nick_name: str
     phone_number: int
     mail: str
