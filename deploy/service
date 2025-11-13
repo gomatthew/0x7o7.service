@@ -8,3 +8,24 @@ docker run -d \
   -v /Users/0x7o7/0x7o7_workspace/minio/data:/data \
   -v /Users/0x7o7/0x7o7_workspace/minio/config:/root/.minio \
   minio/minio server /data --console-address ":9091"
+
+
+Nginx
+  docker run -d \
+  --name nginx \
+  -p 80:80 \
+  -p 443:443 \
+  -v /home/ubuntu/vue-app/dist:/usr/share/nginx/html:ro \
+  -v /home/ubuntu/nginx/logs:/var/log/nginx \
+  -v /etc/nginx/nginx.conf:/etc/nginx/nginx.conf:ro \
+0d17b565c37b
+
+
+MySQL
+docker run -d \
+  --name mysql \
+  -p 3306:3306 \
+  -e MYSQL_ROOT_PASSWORD=makemoney \
+  -e MYSQL_DATABASE=service_data_dev \
+  -v /home/ubuntu/mysql_data:/var/lib/mysql \
+  mysql:8.0
