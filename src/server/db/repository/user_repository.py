@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from typing import Tuple
 from sqlalchemy import and_, or_
 from src.server.db.session import with_session
 from src.server.db.models import UserModel
@@ -6,19 +7,21 @@ from src.server.dto import AddUserDto, UpdateUserDto
 
 
 @with_session
-def user_checkin_from_db(session, user_phone: str, user_email: str) -> (str, bool):
-    if user_obj := session.query(UserModel).filter(
-            or_(UserModel.phone_number == user_phone, UserModel.mail == user_email)).first():
+def user_checkin_from_db(session, user_phone: str, user_email: str) -> Tuple[str | None, bool, int]:
+    filters = set()
+    filters.add(UserModel.phone_number == user_phone) if user_phone else None
+    filters.add(UserModel.mail == user_email) if user_email else None
+    if user_obj := session.query(UserModel).filter(*filters).first():
         # db 有记录
         match user_obj.status:
             case 1:
-                return "已有账户,请直接登录", False
+                return "已有账户,请直接登录", False, 201
             case -1:
-                return "用户已被封禁", False
+                return "用户已被封禁", False, 204
             case 0:
-                return "用户未激活", False
+                return "用户未激活", False, 203
     # db 没有记录
-    return None, True
+    return None, True, 200
 
 
 @with_session

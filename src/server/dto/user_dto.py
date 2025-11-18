@@ -6,7 +6,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 class UserDto(BaseModel):
     id: int = Field(..., description="id")
-    user_nick_name: str = Field(..., max_length=32, description="用户昵称")
+    user_nick_name: Optional[str] = Field(None, max_length=32, description="用户昵称")
     phone_number: Optional[str] = Field(None, max_length=11, description="手机号")
     password: str = Field(..., description="密码")
     mail: Optional[str] = Field(None, description="邮箱")
@@ -18,16 +18,16 @@ class UserDto(BaseModel):
 
 class AddUserDto(BaseModel):
     # id: str
-    user_nick_name: str
-    phone_number: int
+    user_nick_name: Optional[str]
+    phone_number: Optional[str]
     mail: str
     password: str
     created_user: str
 
 
 class UpdateUserDto(BaseModel):
-    user_nick_name: str = None
-    phone_number: int = None
+    user_nick_name: Optional[str] = None
+    phone_number: str = None
     password: str = None
     status: int = None
     token: str = None
