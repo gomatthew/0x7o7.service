@@ -10,7 +10,9 @@ logger.info('[START SERVER]')
 logger.info(f'Runtime Mode | {os.getenv("RUNTIME_ENV")}')
 logger.info(f'Operate System | {platform.platform()}')
 logger.info(f'Python Edition | {sys.version}')
-create_tables()
 app = create_app()
-settings = get_setting()
-uvicorn.run(app, host=settings.APP_HOST, port=settings.APP_PORT)
+
+if __name__ == '__main__':
+    create_tables()
+    settings = get_setting()
+    uvicorn.run(app, host=settings.APP_HOST, port=settings.APP_PORT)
