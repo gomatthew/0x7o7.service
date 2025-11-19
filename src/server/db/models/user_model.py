@@ -11,6 +11,7 @@ class UserModel(BaseModel):
     mail = Column(String(64), nullable=True, default=None, comment="邮箱")
     password = Column(String(128), nullable=False, comment="登录密码")
     token = Column(String(256), nullable=True)
+    avatar = Column(String(256), nullable=True, comment='头像')
     status = Column(Integer, default=1, comment="用户状态 -1-无效 1-有效 0-未激活")
     version = Column(Integer, default=0, comment="乐观锁")
     last_login_time = Column(DateTime, nullable=True, comment="最后登录时间")

@@ -30,5 +30,15 @@ class UpdateUserDto(BaseModel):
     phone_number: str = None
     password: str = None
     status: int = None
-    token: str = None
+    token: str | None = None
     last_login_time: datetime = None
+
+
+class UserInfoDto(BaseModel):
+    id: str | int
+    user_nick_name: Optional[str] = None
+    mail: str
+    phone_number: Optional[str] = None
+    avatar: Optional[str] = None
+    last_login_time: Optional[datetime] = None
+    created_time: Optional[datetime] = None

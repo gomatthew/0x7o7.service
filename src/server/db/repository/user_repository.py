@@ -3,7 +3,14 @@ from typing import Tuple
 from sqlalchemy import and_, or_
 from src.server.db.session import with_session
 from src.server.db.models import UserModel
-from src.server.dto import AddUserDto, UpdateUserDto
+from src.server.dto import AddUserDto, UpdateUserDto,UserInfoDto
+
+@with_session
+def get_user_info_from_db(session, user_id: str) -> UserInfoDto | None:
+    if user_obj := session.query(UserModel).filter(UserModel.id == user_id).first():
+
+        return UserInfoDto(**user_obj.__dict__)
+    return None
 
 
 @with_session
@@ -32,9 +39,9 @@ def update_user_to_db(session, user_id, new_user: UpdateUserDto) -> (str, bool):
             if v:
                 setattr(user_obj, k, v)
         session.add(user_obj)
-        return True
+        return '',True
     else:
-        return None
+        return '',None
 
 
 @with_session
