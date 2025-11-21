@@ -12,6 +12,10 @@ class MessageTypeEnum(StrEnum):
     AUDIO = 'audio'
     VIDEO = 'video'
 
+class FileTypeEnum(StrEnum):
+    KB_FILE = 'kb_file'
+    KB_FILE_SEGMENT = 'kb_file_segment'
+
 if __name__ == '__main__':
     a=ModelTypeEnum.LLM
     print(a)

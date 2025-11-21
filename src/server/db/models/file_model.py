@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from sqlalchemy import Column, DateTime, String, func, Text
-from sqlalchemy.dialects.postgresql import UUID
 from src.server.db.base import Base
 
 
@@ -15,6 +14,8 @@ class FileModel(Base):
     file_path = Column(String(256), comment="文件路径")
     meta_data = Column(String(512), comment='meta')
     file_extension = Column(String(16), comment="文件后缀")
+    biz_type = Column(String(64), comment="业务类型")
+    biz_id = Column(String(64), comment="业务id", index=True)
     # created_org_id = Column(String(64), comment="创建人组织ID")
     # created_org_name = Column(String(32), comment="创建人组织名称")
     created_user_id = Column(String(64), comment="创建人ID")
