@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from sqlalchemy import Column, String, Integer, DateTime
 from src.server.db.models.base import BaseModel
-
+from src.enum import RecordStatusEnum
 
 class PermissionsModel(BaseModel):
     __tablename__ = "permissions"

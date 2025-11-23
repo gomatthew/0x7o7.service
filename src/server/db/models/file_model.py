@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from sqlalchemy import Column, DateTime, String, func, Text
 from src.server.db.base import Base
-
+from src.enum import RecordStatusEnum
 
 class FileModel(Base):
     """
@@ -21,7 +21,7 @@ class FileModel(Base):
     created_user_id = Column(String(64), comment="创建人ID")
     created_user_name = Column(String(32), comment="创建人名称")
     created_time = Column(DateTime, default=func.now(), comment="创建时间")
-    status = Column(String(2), default='1', comment="文件状态，0-已删除，1-有效")
+    status = Column(String(2), default=RecordStatusEnum.ACTIVATE.value, comment="文件状态，0-已删除，1-有效")
 
     def __repr__(self):
         return f"<File(id='{self.id}', name='{self.file_name}',create_time='{self.created_time}')>"

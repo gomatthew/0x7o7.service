@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from sqlalchemy import Column, String, Integer, DateTime,func
 from src.server.db.models.base import BaseModel
-
+from src.enum import RecordStatusEnum
 
 class GoodModel(BaseModel):
     __tablename__ = "goods"
@@ -10,4 +10,4 @@ class GoodModel(BaseModel):
     created_user_id = Column(String(64), comment="创建人ID")
     created_user_name = Column(String(32), comment="创建人名称")
     created_time = Column(DateTime, default=func.now(), comment="创建时间")
-    status = Column(String(2), default='1', comment="状态，0-已删除，1-有效")
+    status = Column(String(2), default=RecordStatusEnum.ACTIVATE.value, comment="状态，0-已删除，1-有效")

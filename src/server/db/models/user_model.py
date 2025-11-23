@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from sqlalchemy import Column, String, Integer, DateTime
 from src.server.db.models.base import BaseModel
-
+from src.enum import RecordStatusEnum
 
 class UserModel(BaseModel):
     __tablename__ = "user"
@@ -12,7 +12,7 @@ class UserModel(BaseModel):
     password = Column(String(128), nullable=False, comment="登录密码")
     token = Column(String(256), nullable=True)
     avatar = Column(String(256), nullable=True, comment='头像')
-    status = Column(Integer, default=1, comment="用户状态 -1-无效 1-有效 0-未激活")
+    status = Column(Integer, default=RecordStatusEnum.ACTIVATE.value, comment="用户状态 -1-无效 1-有效 0-未激活")
     version = Column(Integer, default=0, comment="乐观锁")
     last_login_time = Column(DateTime, nullable=True, comment="最后登录时间")
     __mapper_args__ = {
