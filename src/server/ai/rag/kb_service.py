@@ -1,7 +1,7 @@
 import json
 import traceback
 import requests
-from fastapi import Body, File, UploadFile
+from fastapi import Body, File, UploadFile, Query
 from typing import Optional
 from urllib.parse import urljoin
 from src.enum import FileTypeEnum
@@ -18,7 +18,7 @@ def create_kb(kb_name: str = Body(..., description="知识库名称"),
     """创建 dify 知识库"""
     try:
         # TODO user
-        user_id = 1
+        user_id = "1"
         resp = requests.post(kb_url, headers={"Content-Type": "application/json",
                                               "Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"},
                              json={'name': kb_name, 'description': kb_description})
@@ -38,15 +38,16 @@ def create_kb(kb_name: str = Body(..., description="知识库名称"),
         return ApiCommonResponseDTO(status=500, message="fail").model_dict()
 
 
-def get_kb_list(page: int = Body(1, description="页数"),
-                limit: int = Body(default=10, description="每页数据数")) -> ApiCommonResponseDTO:
-    """获取 dify 知识库列表  """
+def get_kb_list(page: int = Query(1, description="页数"),
+                limit: int = Query(default=10, description="每页数据数")) -> ApiCommonResponseDTO:
+    """获取 Dify 知识库列表  """
     try:
         # TODO user
         user_id = 1
         if data := get_kb_list_from_db(user_id=user_id, page_no=page, page_size=limit):
             return ApiCommonResponseDTO(status=200, data=data).model_dict()
-        return ApiCommonResponseDTO(status=400, message="fail").model_dict()
+        else:
+            return ApiCommonResponseDTO(status=200, message="no data").model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
@@ -69,12 +70,18 @@ def upload_file_to_kb(kb_id: str = Body(..., description="kb_id"),
     """上传知识库文件"""
     try:
         kb_url = f'https://api.dify.ai/v1/datasets/{kb_id}/document/create-by-file'
-        resp = requests.post(kb_url, headers={"Content-Type": "multipart/form-data", },
+        resp = requests.post(kb_url, headers={"Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"},
                              files={'data': (None, json.dumps({
                                  "indexing_technique": "high_quality",
                                  "process_rule": {"mode": "automatic"},
                              }), "application/json"), 'file': (file.filename, file.file.read(), file.content_type)})
-        return ApiCommonResponseDTO().model_dict()
+        if resp.status_code == 200:
+            res_data = resp.json()
+            document_id = res_data.get('document').get('id')
+            logger.info('document_id: {}'.format(document_id))
+            return ApiCommonResponseDTO(status=200,message='success').model_dict()
+        else:
+            return ApiCommonResponseDTO(status=400, message=resp.json().get('message')).model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())

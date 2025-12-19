@@ -18,7 +18,6 @@ def delete_kb_from_db(session, kb_id):
         session.commit()
 
 
-
 @with_session
 def get_kb_list_from_db(session, user_id, page_no=1, page_size=10):
     offset_data = (page_no - 1) * page_size
@@ -37,7 +36,7 @@ def create_kb_to_db(session, kb_name, kb_description, kb_id, user_id):
     kb_obj = KnowledgeBase()
     kb_obj.knowledge_id = kb_id
     kb_obj.kb_name = kb_name
-    kb_obj.kb_dify_name = '_'.join(kb_name + user_id)
+    kb_obj.kb_dify_name = '_'.join([kb_name, user_id])
     kb_obj.description = kb_description
     kb_obj.created_user_id = user_id
     kb_obj.created_user = user_id
