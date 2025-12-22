@@ -18,15 +18,15 @@ def user_login(response: Response, username: str = Body(..., description="用户
                 update_user_to_db(user_obj.id, UpdateUserDto(token=token, last_login_time=dt.datetime))
                 logger.info(f'🟢 用户登录:[END] ==> {username} 成功!')
                 response.set_cookie(
-                    key="Authorization",
+                    key="access_token",
                     value=token,
                     httponly=True,  # JS 无法访问
                     secure=False,  # 生产环境 HTTPS 设置 True
                     samesite="lax",  # 防 CSRF
-                    max_age=3600 * expire_hours  # 1小时过期
+                    max_age=3600 * expire_hours
                 )
                 return ApiCommonResponseDTO(message="success",
-                                            data={'user_id': user_obj.id}).model_dict()
+                                            data={'user_id': user_obj.id,'mail':user_obj.mail}).model_dict()
             else:
                 logger.info(f'🟢 用户登录:[END] ==> {username} 失败!')
                 return ApiCommonResponseDTO(message="账户密码错误", data={}, status=201).model_dict()

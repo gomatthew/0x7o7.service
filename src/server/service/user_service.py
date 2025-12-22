@@ -58,7 +58,7 @@ def user_logout(token_checker: TokenChecker, response: Response):
     try:
         if not (user_id := token_checker):
             return ApiCommonResponseDTO(message="请重新登录!", data={}, status=401).model_dict()
-        response.delete_cookie(key="Authorization")
+        response.delete_cookie(key="access_token")
         return ApiCommonResponseDTO(message="success", data={}, status=200).model_dict()
     except BaseException as e:
         logger.error(e)
