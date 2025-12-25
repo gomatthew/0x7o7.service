@@ -2,6 +2,9 @@
 
 
 prompt_dict = {
-    'llm_chat_default': """{{ input }}"""
+    'llm_chat_default': """{{ input }}""",
+    'rag_chat':"""
+    请你根据
+    """
 
 }

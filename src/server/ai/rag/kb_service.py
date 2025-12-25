@@ -21,7 +21,7 @@ def create_kb(token_checker: TokenChecker,
     """创建 dify 知识库"""
     try:
         if not (user_id := token_checker):
-            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
+            return ApiCommonResponseDTO(message="用户未登录!", status=401).model_dict()
         logger.info(kb_base_url)
         resp = requests.post(kb_base_url, headers={"Content-Type": "application/json",
                                                    "Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"},
@@ -73,7 +73,7 @@ def delete_kb(token_checker: TokenChecker, kb_id: str = Body(..., description="k
         return ApiCommonResponseDTO(status=500, message="fail").model_dict()
 
 
-def upload_file_to_kb(token_checker: TokenChecker,kb_id: str = Body(..., description="kb_id"),
+def upload_file_to_kb(token_checker: TokenChecker, kb_id: str = Body(..., description="kb_id"),
                       file: UploadFile = File(..., description="上传图片")):
     """上传知识库文件"""
     try:
@@ -100,7 +100,7 @@ def upload_file_to_kb(token_checker: TokenChecker,kb_id: str = Body(..., descrip
         return ApiCommonResponseDTO(status=500, message="fail").model_dict()
 
 
-def upload_text_to_kb(token_checker: TokenChecker,kb_id: str = Body(..., description="kb_id")):
+def upload_text_to_kb(token_checker: TokenChecker, kb_id: str = Body(..., description="kb_id")):
     """上传知识库文本 """
     try:
         if not (user_id := token_checker):
@@ -198,3 +198,42 @@ def get_file_seg_list():
         logger.error(e)
         logger.error(traceback.format_exc())
         return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+
+
+def rag_retrieve(kb_id: str = Body(..., description="kb_id"), query: str = Body(..., description="query")):
+    try:
+        logger.info("🟢 [START] hit the kb.")
+        retrieve_url = urljoin(kb_file_base_url, f"{kb_id}/retrieve")
+        payload = {
+            "query": query,
+            "retrieval_model": {
+                "search_method": "hybrid_search",
+                "reranking_enable": True,
+                # "reranking_mode": {
+                #     "reranking_provider_name": "<string>",
+                #     "reranking_model_name": "<string>"
+                # },
+                "top_k": 1,
+                "score_threshold_enabled": True,
+                # "score_threshold": 123,
+                # "weights": 123,
+                # "metadata_filtering_conditions": {
+                #     "logical_operator": "and",
+                #     "conditions": [
+                #         {
+                #             "name": "<string>",
+                #             "comparison_operator": "<string>",
+                #             "value": "<string>"
+                #         }
+                #     ]
+                # }
+            }
+        }
+        resp = requests.post(retrieve_url, headers={"Content-Type": "application/json",
+                                                    "Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"},
+                             json=payload)
+        logger.info('🟢[END] hit the kb finish.')
+        return ApiCommonResponseDTO(status=200, message="success", data=resp.json()).model_dict()
+    except BaseException as e:
+        logger.error(e)
+        logger.error(traceback.format_exc())

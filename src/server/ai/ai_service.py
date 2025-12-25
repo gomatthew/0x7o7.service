@@ -1,14 +1,16 @@
-import asyncio
 import json
-import traceback
 import uuid
+import asyncio
+import traceback
+import requests
+from urllib.parse import urljoin
 from typing import AsyncIterable, Optional
 
 from fastapi import Body
 from langchain.chains import LLMChain
 from langchain_core.messages import AIMessage, HumanMessage, convert_to_messages
 from sse_starlette.sse import EventSourceResponse
-from src.configs import logger
+from src.configs import logger, get_setting
 from src.server.dto import ApiCommonResponseDTO
 from src.server.dto.response_dto import OpenAIOutputDTO
 from src.server.ai.callback_handler.agent_callback_handler import AgentExecutorAsyncIteratorCallbackHandler, AgentStatus
@@ -17,7 +19,9 @@ from src.enum.emuns import MessageTypeEnum
 from src.server.ai.llm_utils import History, generate_llm_instance, create_models_chains, wrap_done, get_tool
 from src.server.ai.prompt.prompt import prompt_dict
 from src.server.db.repository import add_message_to_db, get_chat_history_detail_from_db, add_conversation_to_db
-from src.server.utils import TokenChecker
+from src.server.utils import TokenChecker, http_stream_request, rag_retrieve
+
+setting = get_setting()
 
 
 async def chat(
@@ -41,7 +45,8 @@ async def chat(
             if not conversation_id:
                 conversation_id = uuid.uuid4().hex
 
-            add_message_to_db(conversation_id=conversation_id, message_id=message_id, query=query, user_id=token_checker)
+            add_message_to_db(conversation_id=conversation_id, message_id=message_id, query=query,
+                              user_id=token_checker)
             callback = AgentExecutorAsyncIteratorCallbackHandler(message_id=message_id)
             callbacks = [callback]
             import os
@@ -163,3 +168,37 @@ async def chat(
             ret.created = data["created"]
 
         return ret.model_dump()
+
+
+async def chat_dify(token_checker: TokenChecker,
+                    conversation_id: str = Body('', description="conversation_id"),
+                    kb_id: str = Body(..., description="kb_id"),
+                    query: str = Body(..., description="chat message input"),
+                    lang: str = Body('en', description="en & zh")):
+    try:
+        if not token_checker:
+            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
+        logger.info(f"🟢[START] chat_dify user_id:{token_checker}-query:{query}")
+        chat_dify_url = urljoin(setting.DIFY_SERVER_URL, 'chat-messages')
+        segments = rag_retrieve(kb_id, query)
+        if records := segments.get('records'):
+            _segments = [_.get('segment').get('content') for _ in records]
+        else:
+            _segments = []
+        response = http_stream_request(url=chat_dify_url, http_method="POST",
+                                       headers={"Content-Type": "application/json",
+                                                "Authorization": f"Bearer {setting.DIFY_CHAT_SECRET_KEY}"},
+                                       meta={'query': query, 'user_id': token_checker},
+                                       data={
+                                           'inputs': {'segments': json.dumps(_segments), 'lang': lang},
+                                           'query': query,
+                                           'conversation_id': conversation_id,
+                                           'user': token_checker,
+                                           'response_mode': 'streaming'})
+        # requests.post(url=chat_dify_url, headers={"Content-Type": "application/json",
+        #                                           "Authorization": f"Bearer {setting.DIFY_CHAT_SECRET_KEY}"},
+        #               json={'query': query, 'segments': segments, 'lang': lang,'response_mode':'streaming'})
+        logger.info(f"🟢[END] chat_dify user_id:{token_checker}-query:{query}")
+        return EventSourceResponse(response)
+    except BaseException as e:
+        logger.error(f"error in chat: {e}")

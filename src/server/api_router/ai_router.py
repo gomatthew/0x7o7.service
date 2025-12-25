@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 from fastapi import APIRouter, Depends
-from src.server.ai.ai_service import chat
+from src.server.ai.ai_service import chat,chat_dify
 from src.server.utils import token_identify
 
 ai_router = APIRouter(prefix="/ai", tags=["AI"], dependencies=[Depends(token_identify)])
 
-ai_router.post('/chat')(chat)
+ai_router.post('/chat')(chat_dify)

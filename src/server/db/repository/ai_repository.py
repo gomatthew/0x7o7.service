@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import uuid
 from sqlalchemy import and_, desc
+from sqlalchemy.dialects.mysql import insert
 from src.server.db.ai_models.message_model import MessageModel
 from src.server.db.ai_models.conversation_model import ConversationModel
 from src.server.db.ai_models.knowledge_base_model import KnowledgeBase
@@ -98,7 +99,8 @@ def get_chat_history_list_from_db(session, user_id: str, page_no: int = 1, page_
 
 
 @with_session
-def add_message_to_db(session, conversation_id=None, message_id=None, query=None, llm_model=None, user_id=None):
+def add_message_to_db(session, conversation_id=None, message_id=None, ai_response=None, query=None, llm_model=None,
+                      user_id=None, create_time=None, finish_time=None):
     """
     新增对话
     """
@@ -108,18 +110,26 @@ def add_message_to_db(session, conversation_id=None, message_id=None, query=None
     new_message.user_query = query
     new_message.llm_model = llm_model
     new_message.user_id = user_id
+    new_message.ai_response = ai_response
+    new_message.finish_time = finish_time
+    new_message.create_time = create_time
     session.add(new_message)
     session.commit()
     return message_id
 
 
 @with_session
-def add_conversation_to_db(session, title=None, llm_model=None, user_id=None):
-    new_conversation = ConversationModel()
-    new_conversation.conversation_id = uuid.uuid4().hex
-    new_conversation.title = title
-    new_conversation.llm_model = llm_model
-    new_conversation.user_id = user_id
-    session.add(new_conversation)
+def add_conversation_to_db(session, conversation_id=None, title=None, llm_model=None, user_id=None, create_time=None,
+                           finish_time=None):
+    # new_conversation = ConversationModel()
+    # new_conversation.conversation_id = conversation_id if conversation_id else uuid.uuid4().hex
+    # new_conversation.title = title
+    # new_conversation.llm_model = llm_model
+    # new_conversation.user_id = user_id
+    c_data = {'conversation_id': conversation_id if conversation_id else uuid.uuid4().hex, 'conversation_title': title,
+              'create_time': create_time, 'finish_time': finish_time, 'llm_model': llm_model, 'user_id': user_id}
+    insert_stmt = insert(ConversationModel).values(**c_data)
+    on_duplicate_key_stmt = insert_stmt.on_duplicate_key_update({"finish_time": dt.method_datetime()})
+    session.execute(on_duplicate_key_stmt)
     session.commit()
-    return new_conversation.conversation_id
+    return conversation_id
