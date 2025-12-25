@@ -1,22 +1,23 @@
-import uuid
 import traceback
 from typing import Optional
 import bcrypt as bp
-from fastapi import Body, Response
+from fastapi import Body, Request, Response
 
 from src.configs import logger
 from src.server.db.repository import add_user, user_checkin_from_db, get_user_info_from_db
 from src.server.dto import AddUserDto, ApiCommonResponseDTO
-from src.server.libs import bp
+from src.server.libs import bp, register_rate_limit
 from src.server.utils import TokenChecker
 
 
-def user_register(user_nickname: Optional[str] = Body(None, description="用户昵称"),
+def user_register(request: Request, user_nickname: Optional[str] = Body(None, description="用户昵称"),
                   mail: str = Body(..., description="邮箱"),
                   phone: Optional[str] = Body(None, description="手机"),
                   user_password: str = Body(..., description="用户密码")) -> ApiCommonResponseDTO:
     try:
         logger.info(f"🟢 新增用户:[START] ==> {mail}")
+        if register_rate_limit(request, mail):
+            return ApiCommonResponseDTO(message="Too many requests. Please try again later.", status=401).model_dict()
         check_message, check_tag, check_status = user_checkin_from_db(user_phone=phone, user_email=mail)
         if check_tag:
             # 新增用户
