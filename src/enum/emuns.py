@@ -24,6 +24,12 @@ class FileTypeEnum(StrEnum):
     KB_FILE_SEGMENT = 'kb_file_segment'
 
 
+class UploadRagFileTypeEnum(StrEnum):
+    EMBEDDING = 'embedding'
+    FAIL = 'fail'
+    COMPLETED = 'completed'
+
+
 if __name__ == '__main__':
     a = ModelTypeEnum.LLM
     print(a)

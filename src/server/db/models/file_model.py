@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-from sqlalchemy import Column, DateTime, String, func, Text
+from sqlalchemy import Column, DateTime, String, func, JSON
 from src.server.db.base import Base
 from src.enum import RecordStatusEnum
+
 
 class FileModel(Base):
     """
@@ -12,7 +13,7 @@ class FileModel(Base):
     id = Column(String(64), primary_key=True, comment="文件ID")
     file_name = Column(String(256), comment="文件名")
     file_path = Column(String(256), comment="文件路径")
-    meta_data = Column(String(512), comment='meta')
+    meta_data = Column(JSON, comment='meta')
     file_extension = Column(String(16), comment="文件后缀")
     biz_type = Column(String(64), comment="业务类型")
     biz_id = Column(String(64), comment="业务id", index=True)

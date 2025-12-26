@@ -23,7 +23,7 @@ def token_identify(token: Optional[str] = Depends(cookie_scheme)):
     # else:
     #     return None
     if checkout := token_handler.verify_token(token):
-        return checkout.get("data", {}).get("id")
+        return str(checkout.get("data", {}).get("id"))
     return None
 
 

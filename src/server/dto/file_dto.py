@@ -7,9 +7,10 @@ class AddFileToDBDTO(BaseModel):
     file_id: Optional[str] = None
     file_name: str = None
     file_path: str = None
-    meta_data: str = None
+    meta_data: Any = None
     file_extension: str = None
     biz_type: str = None
+    biz_id: str = None
     created_user_id: str = None
     created_user_name: Optional[str] = None
     created_time: Optional[str] = None

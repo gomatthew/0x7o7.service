@@ -1,12 +1,14 @@
 import json
 import traceback
+
 import requests
 from fastapi import Body, File, UploadFile, Query
 from typing import Optional
 from urllib.parse import urljoin
-from src.enum import FileTypeEnum
+from src.enum import UploadRagFileTypeEnum, FileTypeEnum
 from src.configs import get_setting, logger
-from src.server.dto import ApiCommonResponseDTO
+from src.server.db.repository import add_file_to_db, check_file_count, get_file_list_from_db
+from src.server.dto import ApiCommonResponseDTO, AddFileToDBDTO
 from src.server.utils import TokenChecker
 from src.server.db.repository.ai_repository import create_kb_to_db, get_kb_list_from_db, delete_kb_from_db
 
@@ -22,15 +24,17 @@ def create_kb(token_checker: TokenChecker,
     try:
         if not (user_id := token_checker):
             return ApiCommonResponseDTO(message="用户未登录!", status=401).model_dict()
-        logger.info(kb_base_url)
+        logger.info(f'🟢 创建RAG知识库 [START] ===> {user_id}')
+        dify_kb_name = '|user_id:'.join([kb_name, user_id])
         resp = requests.post(kb_base_url, headers={"Content-Type": "application/json",
                                                    "Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"},
-                             json={'name': kb_name, 'description': kb_description})
+                             json={'name': dify_kb_name, 'description': kb_description})
         match resp.status_code:
             case 200:
                 kb_id = resp.json().get('id')
                 create_kb_to_db(kb_name=kb_name, kb_description=kb_description,
                                 kb_id=kb_id, user_id=user_id)
+                logger.info(f'🟢 创建RAG知识库 [END] ===> {user_id}')
                 return ApiCommonResponseDTO(status=201, message='success', data={'kb_id': kb_id}).model_dict()
             case 409:
                 logger.info(resp.json())
@@ -50,9 +54,12 @@ def get_kb_list(token_checker: TokenChecker,
     try:
         if not (user_id := token_checker):
             return ApiCommonResponseDTO(message="用户未登录!").model_dict()
+        logger.info(f'🟢 获取RAG知识库列表 [START] ===> {user_id}')
         if data := get_kb_list_from_db(user_id=user_id, page_no=page, page_size=limit):
+            logger.info(f'🟢 获取RAG知识库列表 [END] ===> {user_id}成功!')
             return ApiCommonResponseDTO(status=200, data=data).model_dict()
         else:
+            logger.info(f'🟢 获取RAG知识库列表 [END] ===> {user_id} 没有数据!')
             return ApiCommonResponseDTO(status=200, message="no data").model_dict()
     except BaseException as e:
         logger.error(e)
@@ -79,19 +86,30 @@ def upload_file_to_kb(token_checker: TokenChecker, kb_id: str = Body(..., descri
     try:
         if not (user_id := token_checker):
             return ApiCommonResponseDTO(message="用户未登录!").model_dict()
+        logger.info(f'🟢 上传RAG文件到DIFY [START] ===> {user_id}')
+        if _ := check_file_count(kb_id=kb_id):
+            return ApiCommonResponseDTO(status=200, message="upload file limit").model_dict()
         file_upload_url = urljoin(kb_file_base_url, f'{kb_id}/document/create-by-file')
-        logger.info(file_upload_url)
         resp = requests.post(file_upload_url, headers={"Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"},
                              files={'data': (None, json.dumps({
                                  "indexing_technique": "high_quality",
                                  "process_rule": {"mode": "automatic"},
                              }), "application/json"), 'file': (file.filename, file.file.read(), file.content_type)})
-        logger.info(resp.text)
         if resp.status_code == 200:
             res_data = resp.json()
-            document_id = res_data.get('document').get('id')
-            logger.info('document_id: {}'.format(document_id))
-            return ApiCommonResponseDTO(status=200, message='success').model_dict()
+            add_file_to_db(AddFileToDBDTO(file_id=res_data.get('document').get('id'),
+                                          file_name=file.filename,
+                                          file_path='dify',
+                                          meta_data={'batch': res_data.get('batch')},
+                                          file_extension=file.filename.split('.')[-1],
+                                          biz_type=FileTypeEnum.KB_FILE,
+                                          biz_id=kb_id,
+                                          created_user_id=user_id))
+            # document_id = res_data.get('document').get('id')
+            # logger.info('document_id: {}'.format(document_id))
+            logger.info(f'🟢 上传RAG文件到DIFY [END] ===> {user_id} 成功!')
+            return ApiCommonResponseDTO(status=200, message='success',
+                                        data={'batch': res_data.get('batch')}).model_dict()
         else:
             return ApiCommonResponseDTO(status=400, message=resp.json().get('message')).model_dict()
     except BaseException as e:
@@ -155,13 +173,24 @@ def upload_text_to_kb(token_checker: TokenChecker, kb_id: str = Body(..., descri
         return ApiCommonResponseDTO(status=500, message="fail").model_dict()
 
 
-def get_file_progress(kb_id: str = Body(..., description="kb_id"), batch: str = Body(..., description="batch")):
+def get_file_progress(token_checker: TokenChecker, kb_id: str = Query(..., description="kb_id"),
+                      batch: str = Query(..., description="batch")):
     try:
+        if not (user_id := token_checker):
+            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
         progress_url = urljoin(kb_file_base_url, f'{kb_id}/documents/{batch}/indexing-status')
         resp = requests.get(progress_url, headers={"Content-Type": "application/json",
                                                    "Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"})
         if resp.status_code == 200:
-            return ApiCommonResponseDTO(status=200, message="success").model_dict()
+            resp_data = resp.json()
+            check_progress = [i.get('indexing_status') for i in resp_data.get('data')]
+            if all(status == UploadRagFileTypeEnum.COMPLETED.value for status in check_progress):
+                indexing_status = UploadRagFileTypeEnum.COMPLETED.value
+            else:
+                indexing_status = UploadRagFileTypeEnum.EMBEDDING.value
+            logger.info(indexing_status)
+            return ApiCommonResponseDTO(status=200, message="success",
+                                        data={'indexing_status': indexing_status}).model_dict()
         else:
             return ApiCommonResponseDTO(status=500, message="fail").model_dict()
     except BaseException as e:
@@ -200,8 +229,11 @@ def get_file_seg_list():
         return ApiCommonResponseDTO(status=500, message="fail").model_dict()
 
 
-def rag_retrieve(kb_id: str = Body(..., description="kb_id"), query: str = Body(..., description="query")):
+def rag_retrieve(token_checker: TokenChecker, kb_id: str = Body(..., description="kb_id"),
+                 query: str = Body(..., description="query")):
     try:
+        if not (user_id := token_checker):
+            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
         logger.info("🟢 [START] hit the kb.")
         retrieve_url = urljoin(kb_file_base_url, f"{kb_id}/retrieve")
         payload = {
@@ -234,6 +266,19 @@ def rag_retrieve(kb_id: str = Body(..., description="kb_id"), query: str = Body(
                              json=payload)
         logger.info('🟢[END] hit the kb finish.')
         return ApiCommonResponseDTO(status=200, message="success", data=resp.json()).model_dict()
+    except BaseException as e:
+        logger.error(e)
+        logger.error(traceback.format_exc())
+
+
+def get_file_list(token_checker: TokenChecker, kb_id: str = Query(..., description="kb_id")):
+    try:
+        if not (user_id := token_checker):
+            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
+        if data := get_file_list_from_db(kb_id):
+            return ApiCommonResponseDTO(status=200, message="success", data=data).model_dict()
+        else:
+            return ApiCommonResponseDTO(status=201, message="no data", ).model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())

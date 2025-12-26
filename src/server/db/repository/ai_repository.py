@@ -37,7 +37,7 @@ def create_kb_to_db(session, kb_name, kb_description, kb_id, user_id):
     kb_obj = KnowledgeBase()
     kb_obj.knowledge_id = kb_id
     kb_obj.kb_name = kb_name
-    kb_obj.kb_dify_name = '_'.join([kb_name, user_id])
+    kb_obj.kb_dify_name = '|user_id:'.join([kb_name, user_id])
     kb_obj.description = kb_description
     kb_obj.created_user_id = user_id
     kb_obj.created_user = user_id
