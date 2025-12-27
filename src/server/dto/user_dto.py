@@ -14,7 +14,7 @@ class UserDto(BaseModel):
     token: Optional[str] = Field(None, description="token")
     last_login_time: Optional[datetime] = Field(None, description="最后登录时间")
     model_config = {"from_attributes": True}
-
+    created_time: Optional[datetime] = None
 
 class AddUserDto(BaseModel):
     # id: str
@@ -38,6 +38,7 @@ class UserInfoDto(BaseModel):
     id: str | int
     user_nick_name: Optional[str] = None
     mail: str
+    password: str
     phone_number: Optional[str] = None
     avatar: Optional[str] = None
     last_login_time: Optional[datetime] = None

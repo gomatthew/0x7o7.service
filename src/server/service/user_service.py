@@ -45,9 +45,11 @@ def user_register(request: Request, user_nickname: Optional[str] = Body(None, de
 
 def get_userinfo(token_checker: TokenChecker):
     try:
+        logger.info(f"🟢 查询用户:[START] {token_checker}")
         if not (user_id := token_checker):
             return ApiCommonResponseDTO(message="由于长时间未登录请重新登录", data={}, status=401).model_dict()
         user_info = get_user_info_from_db(user_id=user_id)
+        logger.info(f"🟢 查询用户:[END] {token_checker} 成功!")
         return ApiCommonResponseDTO(message="success", data=user_info, status=200).model_dict()
     except BaseException as e:
         logger.error(e)
