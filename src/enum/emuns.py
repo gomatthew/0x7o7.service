@@ -22,7 +22,7 @@ class MessageTypeEnum(StrEnum):
 class FileTypeEnum(StrEnum):
     KB_FILE = 'kb_file'
     KB_FILE_SEGMENT = 'kb_file_segment'
-
+    OCR = 'ocr'
 
 class UploadRagFileTypeEnum(StrEnum):
     EMBEDDING = 'embedding'

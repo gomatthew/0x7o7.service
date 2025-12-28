@@ -1,5 +1,5 @@
 # encoding:utf-8
-import time
+import json
 import traceback
 
 import requests
@@ -9,7 +9,10 @@ from sse_starlette.sse import EventSourceResponse
 from fastapi import UploadFile, File, Body, Request
 from src.configs import get_setting, logger
 from src.server.dto import ApiCommonResponseDTO
+from src.server.dto.file_dto import AddFileToDBDTO
 from src.server.utils import TokenChecker, http_stream_request
+from src.server.db.repository import check_ocr_file_count, add_file_to_db
+from src.enum.emuns import FileTypeEnum
 
 setting = get_setting()
 OCR_BASE_URL = setting.OCR_BASE_URL
@@ -51,6 +54,15 @@ def ocr_auth(client_id, client_secret):
     return None
 
 
+async def event_gen():
+    # 这里做你的校验
+
+    yield {
+        "event": "error",
+        "data": {"status": 401, "message": "ocr.limit"}
+    }
+
+
 async def ocr_chat(token_checker: TokenChecker, query: str = Body(default=None, description="用户输入"),
                    conversation_id: str = Body(default=None, description="conversation_id"),
                    lang: str = Body(default='en', description="zh & en"),
@@ -61,6 +73,9 @@ async def ocr_chat(token_checker: TokenChecker, query: str = Body(default=None, 
         return ApiCommonResponseDTO(message="input anything", data={}, status=401).model_dict()
     try:
         logger.info(f"🟢 OCR服务:[START] ==> user_id: {user_id}")
+        if _ := check_ocr_file_count(user_id=user_id):
+            logger.info(f"OCR服务:[END] ==> user_id: {user_id} 超限额!")
+            return EventSourceResponse(event_gen())
         if not conversation_id:
             # 首次上传图片,使用ocr
             query = '以下是OCR 文本:\r\n'
@@ -88,6 +103,12 @@ async def ocr_chat(token_checker: TokenChecker, query: str = Body(default=None, 
                                            'conversation_id': conversation_id,
                                            'user': token_checker,
                                            'response_mode': 'streaming'})
+        add_file_to_db(AddFileToDBDTO(file_name=file.filename,
+                                      file_path='dify',
+                                      # meta_data: Any = None
+                                      file_extension=file.filename.split('.')[-1],
+                                      biz_type=FileTypeEnum.OCR,
+                                      created_user_id=user_id))
         logger.info(f"🟢 OCR服务:[END] ==> user_id: {user_id} 成功!")
         return EventSourceResponse(response)
     except BaseException as e:

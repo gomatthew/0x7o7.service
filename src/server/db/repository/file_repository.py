@@ -1,20 +1,32 @@
 # -*- coding: utf-8 -*-
 import uuid
-from sqlalchemy import desc
+from sqlalchemy import desc, and_
 from sqlalchemy.dialects.postgresql import insert
 from src.configs import get_setting
 from src.server.db.session import with_session
 from src.server.db.models.file_model import FileModel
 from src.server.dto.file_dto import AddFileToDBDTO
+from src.enum.emuns import RecordStatusEnum, FileTypeEnum
 
 setting = get_setting()
 
 
 @with_session
 def check_file_count(session, kb_id: str):
-    if session.query(FileModel).filter(FileModel.biz_id == kb_id).count() >= setting.DIFY_UPLOAD_FILE_LIMIT:
+    if session.query(FileModel).filter(and_(FileModel.biz_id == kb_id,
+                                            FileModel.status == RecordStatusEnum.ACTIVATE)).count() >= setting.DIFY_UPLOAD_FILE_LIMIT:
         # return True
         return False
+    else:
+        return False
+
+
+@with_session
+def check_ocr_file_count(session, user_id: str):
+    if session.query(FileModel).filter(
+            and_(FileModel.biz_type == FileTypeEnum.OCR, FileModel.status == RecordStatusEnum.ACTIVATE,
+                 FileModel.created_user_id == user_id)).count() > setting.OCR_FILE_LIMIT:
+        return True
     else:
         return False
 
