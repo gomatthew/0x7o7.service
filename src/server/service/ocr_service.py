@@ -1,11 +1,12 @@
 # encoding:utf-8
+import time
 import traceback
 
 import requests
 import base64
 from urllib.parse import urljoin
 from sse_starlette.sse import EventSourceResponse
-from fastapi import UploadFile, File, Body
+from fastapi import UploadFile, File, Body, Request
 from src.configs import get_setting, logger
 from src.server.dto import ApiCommonResponseDTO
 from src.server.utils import TokenChecker, http_stream_request
@@ -56,6 +57,8 @@ async def ocr_chat(token_checker: TokenChecker, query: str = Body(default=None, 
                    file: UploadFile = File(None, description="上传的图片")):
     if not (user_id := token_checker):
         return ApiCommonResponseDTO(message="请重新登录!", data={}, status=401).model_dict()
+    if not file and not query:
+        return ApiCommonResponseDTO(message="input anything", data={}, status=401).model_dict()
     try:
         logger.info(f"🟢 OCR服务:[START] ==> user_id: {user_id}")
         if not conversation_id:
