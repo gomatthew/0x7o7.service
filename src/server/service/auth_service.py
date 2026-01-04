@@ -1,10 +1,12 @@
 import traceback
 from fastapi import Body, Response
 from src.server.dto import UpdateUserDto, ApiCommonResponseDTO
-from src.configs import logger
+from src.configs import logger, get_setting
 from src.server.db.repository import get_user_id_from_db, update_user_to_db, get_user_by_id
-from src.server.libs import bp, dt, token_handler
+from src.server.libs import bp, dt, token_handler, send_mail
 from src.server.utils import TokenChecker
+
+setting = get_setting()
 
 
 def user_login(response: Response, username: str = Body(..., description="用户名"),
@@ -17,6 +19,8 @@ def user_login(response: Response, username: str = Body(..., description="用户
                 token, expire_hours = token_handler.generate_token(user_obj.id)
                 update_user_to_db(user_obj.id, UpdateUserDto(token=token, last_login_time=dt.datetime))
                 logger.info(f'🟢 用户登录:[END] ==> {username} 成功!')
+                send_mail(message=f'用户登录:{user_obj.mail}', receiver_email=setting.RECEIVER,
+                          subject=f'用户{user_obj.mail}登录成功!')
                 response.set_cookie(
                     key="access_token",
                     value=token,

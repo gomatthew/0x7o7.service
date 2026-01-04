@@ -3,13 +3,13 @@ from typing import Optional
 import bcrypt as bp
 from fastapi import Body, Request, Response
 
-from src.configs import logger
+from src.configs import logger,get_setting
 from src.server.db.repository import add_user, user_checkin_from_db, get_user_info_from_db
 from src.server.dto import AddUserDto, ApiCommonResponseDTO
-from src.server.libs import bp, register_rate_limit
+from src.server.libs import bp, register_rate_limit,send_mail
 from src.server.utils import TokenChecker
 
-
+setting = get_setting()
 def user_register(request: Request, user_nickname: Optional[str] = Body(None, description="用户昵称"),
                   mail: str = Body(..., description="邮箱"),
                   phone: Optional[str] = Body(None, description="手机"),
@@ -32,6 +32,7 @@ def user_register(request: Request, user_nickname: Optional[str] = Body(None, de
                 created_user='admin')
             user_id = add_user(user_obj)
             logger.info("🟢 新增用户:[END] 结果: SUCCESS!")
+            send_mail(message=f'新增用户:{mail}', receiver_email=setting.RECEIVER, subject='0x7o7新增用户!')
             return ApiCommonResponseDTO(message="success", data={'user_id': user_id, 'token': ''},
                                         status=check_status).model_dict()
         logger.info(f"🟢 新增用户:[END] 结果: {check_message}")
