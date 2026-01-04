@@ -22,7 +22,7 @@ def send_mail(message: str, receiver_email: str, subject: str):
     # 创建 MIMEText 邮件对象（纯文本）
     message = MIMEText(body, 'plain', 'utf-8')
     message['From'] = Header("0x7o7 WorkSpace", 'utf-8')  # 工作室名称
-    message['To'] = Header("gomatt6688@gmail.com", 'utf-8')
+    message['To'] = Header(receiver_email, 'utf-8')
     message['Subject'] = Header(subject, 'utf-8')
 
     # ========== 发送邮件 ==========
