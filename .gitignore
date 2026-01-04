@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 .DS_Store
+src/configs
 # 忽略 Python 缓存
 log
 *.py[cod]
