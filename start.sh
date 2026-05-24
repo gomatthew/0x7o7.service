@@ -5,4 +5,4 @@ BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 cd "$BASE_DIR"
 
-gunicorn -c deploy/gunicorn_conf.py main:app
+/root/.local/bin/uv run gunicorn -c deploy/gunicorn_conf.py main:app

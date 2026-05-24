@@ -3,13 +3,16 @@ from sqlalchemy import Column, String, Integer, DateTime
 from src.server.db.models.base import BaseModel
 from src.enum import RecordStatusEnum
 
+
 class UserModel(BaseModel):
     __tablename__ = "user"
     # id = Column(String(64), primary_key=True)
+    tenant_id = Column(String(64), comment='tenant_id')
     user_nick_name = Column(String(32), nullable=True, comment="用户昵称")
     phone_number = Column(String(11), nullable=True, unique=True, index=True, default=None, comment="手机号")
     mail = Column(String(64), nullable=True, default=None, comment="邮箱")
     password = Column(String(128), nullable=False, comment="登录密码")
+    role = Column(String(32), default=None, comment='角色')
     token = Column(String(256), nullable=True)
     avatar = Column(String(256), nullable=True, comment='头像')
     status = Column(Integer, default=RecordStatusEnum.ACTIVATE.value, comment="用户状态 -1-无效 1-有效 0-未激活")

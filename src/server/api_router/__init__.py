@@ -3,3 +3,4 @@ from src.server.api_router.user_router import user_router
 from src.server.api_router.service_router import service_router
 from src.server.api_router.ai_router import ai_router
 from src.server.api_router.rag_router import rag_router
+from src.server.api_router.chat_router import chat_router

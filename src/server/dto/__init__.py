@@ -2,3 +2,4 @@
 from src.server.dto.user_dto import UserDto, AddUserDto, UpdateUserDto, UserInfoDto
 from src.server.dto.response_dto import ApiCommonResponseDTO
 from src.server.dto.file_dto import AddFileToDBDTO
+from src.server.dto.ai_chat_dto import ChatCompletionRequestDto, ChatMessageDto, CreateKnowledgeBaseDto

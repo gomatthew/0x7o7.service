@@ -3,7 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
 from src.configs.settings import VERSION
-from src.server.api_router import auth_router, user_router, service_router, ai_router, rag_router
+from src.server.api_router import auth_router, user_router, service_router, ai_router, rag_router, chat_router
+from src.server.utils import RateLimitException, rate_limit_exception_handler
 
 
 def create_tables():
@@ -13,6 +14,7 @@ def create_tables():
 
 def create_app() -> FastAPI:
     app = FastAPI(title="make money", version=VERSION)
+    app.add_exception_handler(RateLimitException, rate_limit_exception_handler)
 
     app.add_middleware(
         CORSMiddleware,
@@ -31,4 +33,5 @@ def create_app() -> FastAPI:
     app.include_router(service_router)
     app.include_router(ai_router)
     app.include_router(rag_router)
+    app.include_router(chat_router)
     return app

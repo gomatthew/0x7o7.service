@@ -28,16 +28,26 @@ def get_kb_list_from_db(session, user_id, page_no=1, page_size=10):
     if query := session.query(KnowledgeBase).filter(*filters).order_by(
             desc(KnowledgeBase.created_time)).offset(offset_data).limit(
         page_size):
-        return [{'kb_id': q.knowledge_id, 'kb_name': q.kb_name, 'kb_desc': q.description} for q in query]
+        return [{'kb_id': q.knowledge_id, 'kb_name': q.kb_name, 'kb_desc': q.description,
+                 'kb_path': q.kb_dify_name, 'created_user_id': q.created_user_id} for q in query]
     return None
 
 
 @with_session
-def create_kb_to_db(session, kb_name, kb_description, kb_id, user_id):
+def get_kb_from_db(session, kb_id):
+    if q := session.query(KnowledgeBase).filter(
+            and_(KnowledgeBase.knowledge_id == kb_id, KnowledgeBase.status == RecordStatusEnum.ACTIVATE.value)).first():
+        return {'kb_id': q.knowledge_id, 'kb_name': q.kb_name, 'kb_desc': q.description,
+                'kb_path': q.kb_dify_name, 'created_user_id': q.created_user_id}
+    return None
+
+
+@with_session
+def create_kb_to_db(session, kb_name, kb_description, kb_id, user_id, kb_path=None):
     kb_obj = KnowledgeBase()
     kb_obj.knowledge_id = kb_id
     kb_obj.kb_name = kb_name
-    kb_obj.kb_dify_name = '|user_id:'.join([kb_name, user_id])
+    kb_obj.kb_dify_name = kb_path or '|user_id:'.join([kb_name, user_id])
     kb_obj.description = kb_description
     kb_obj.created_user_id = user_id
     kb_obj.created_user = user_id

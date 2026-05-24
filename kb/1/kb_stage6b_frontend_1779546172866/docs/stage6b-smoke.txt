@@ -1,0 +1,1 @@
+Stage 6B smoke document. The AI workflow SaaS supports FastAPI chat, local knowledge bases, document upload, FAISS retrieval, source return, and usage-aware demo boundaries.

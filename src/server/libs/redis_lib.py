@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 import json
 import redis
+import redis.asyncio as async_redis
 from fastapi import Request
 from src.configs import get_setting
 
 settings = get_setting()
 redis_store = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+async_redis_store = async_redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
 
 
 # rq_job_queue = rq.Queue(connection=redis_store, name='job_queue')
@@ -82,6 +84,42 @@ def redis_get(key):
 def redis_remove(key):
     result = redis_store.delete(key)
     return result
+
+
+async def async_set(key: str, value, ex: int = 86400):
+    if not isinstance(value, str):
+        value = json.dumps(value, ensure_ascii=False)
+    return await async_redis_store.set(key, value, ex=ex)
+
+
+async def async_get(key: str):
+    value = await async_redis_store.get(key)
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except BaseException:
+        return value
+
+
+async def async_delete(key: str):
+    return await async_redis_store.delete(key)
+
+
+async def async_incr(key: str, ex: int = 60):
+    value = await async_redis_store.incr(key)
+    if value == 1:
+        await async_redis_store.expire(key, ex)
+    return value
+
+
+async def async_exists(key: str):
+    return await async_redis_store.exists(key)
+
+
+async def async_rate_limit(key: str, limit: int, ttl: int):
+    count = await async_incr(key, ex=ttl)
+    return count > limit, count
 
 
 def register_rate_limit(request: Request, email):

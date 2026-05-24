@@ -10,7 +10,8 @@ from fastapi import Body
 # from langchain_core.messages import convert_to_messages
 from sse_starlette.sse import EventSourceResponse
 from src.configs import logger, get_setting
-from src.server.dto import ApiCommonResponseDTO
+from src.server.ai.chat_service import chat_service
+from src.server.dto import ApiCommonResponseDTO, ChatCompletionRequestDto, ChatMessageDto
 # from src.server.dto.response_dto import OpenAIOutputDTO
 # from src.server.ai.callback_handler.agent_callback_handler import AgentExecutorAsyncIteratorCallbackHandler, AgentStatus
 #
@@ -171,35 +172,26 @@ setting = get_setting()
 
 async def chat_dify(token_checker: TokenChecker,
                     conversation_id: str = Body('', description="conversation_id"),
-                    kb_id: str = Body(..., description="kb_id"),
+                    kb_id: str = Body(None, description="kb_id"),
                     query: str = Body(..., description="chat message input"),
-                    lang: str = Body('en', description="en & zh")):
+                    lang: str = Body('en', description="en & zh"),
+                    is_stream: bool = Body(True, description="是否流式输出"),
+                    reranker: bool = Body(False, description="是否启用重排序")):
     try:
         if not token_checker:
             return ApiCommonResponseDTO(message="用户未登录!").model_dict()
-        logger.info(f"🟢[START] chat_dify user_id:{token_checker}-query:{query}")
-        chat_dify_url = urljoin(setting.DIFY_SERVER_URL, 'chat-messages')
-        segments = rag_retrieve(kb_id, query)
-        if records := segments.get('records'):
-            _segments = [_.get('segment').get('content') for _ in records]
-        else:
-            _segments = []
-        response = http_stream_request(url=chat_dify_url, http_method="POST",
-                                       headers={"Content-Type": "application/json",
-                                                "Authorization": f"Bearer {setting.DIFY_CHAT_SECRET_KEY}"},
-                                       meta={'query': query, 'user_id': token_checker},
-                                       data={
-                                           'inputs': {'segments': json.dumps(_segments), 'lang': lang},
-                                           'query': query,
-                                           'conversation_id': conversation_id,
-                                           'user': token_checker,
-                                           'response_mode': 'streaming'})
-        # requests.post(url=chat_dify_url, headers={"Content-Type": "application/json",
-        #                                           "Authorization": f"Bearer {setting.DIFY_CHAT_SECRET_KEY}"},
-        #               json={'query': query, 'segments': segments, 'lang': lang,'response_mode':'streaming'})
-        logger.info(f"🟢[END] chat_dify user_id:{token_checker}-query:{query}")
-        return EventSourceResponse(response)
+        logger.info(f"🟢[START] local chat user_id:{token_checker}-query:{query}")
+        request_dto = ChatCompletionRequestDto(
+            user_id=int(token_checker) if str(token_checker).isdigit() else None,
+            knowledge_base_id=kb_id,
+            messages=[ChatMessageDto(role="user", content=query)],
+            business_type="default",
+            is_stream=is_stream,
+            reranker=reranker,
+        )
+        response = await chat_service.chat_completions(request_dto)
+        logger.info(f"🟢[END] local chat user_id:{token_checker}-query:{query}")
+        return response
     except BaseException as e:
         logger.error(f"error in chat: {e}")
         logger.error(traceback.format_exc())
-

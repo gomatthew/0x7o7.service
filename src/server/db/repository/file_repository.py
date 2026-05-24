@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import uuid
 from sqlalchemy import desc, and_
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.mysql import insert
 from src.configs import get_setting
 from src.server.db.session import with_session
 from src.server.db.models.file_model import FileModel

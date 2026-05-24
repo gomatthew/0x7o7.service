@@ -1,0 +1,1 @@
+Stage 6B proxy smoke. OCR escalations and knowledge retrieval should use KB sources.

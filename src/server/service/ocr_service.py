@@ -10,7 +10,7 @@ from fastapi import UploadFile, File, Body, Request
 from src.configs import get_setting, logger
 from src.server.dto import ApiCommonResponseDTO
 from src.server.dto.file_dto import AddFileToDBDTO
-from src.server.utils import TokenChecker, http_stream_request
+from src.server.utils import TokenChecker, http_stream_request, is_admin_user
 from src.server.db.repository import check_ocr_file_count, add_file_to_db
 from src.enum.emuns import FileTypeEnum
 
@@ -73,7 +73,7 @@ async def ocr_chat(token_checker: TokenChecker, query: str = Body(default=None, 
         return ApiCommonResponseDTO(message="input anything", data={}, status=401).model_dict()
     try:
         logger.info(f"🟢 OCR服务:[START] ==> user_id: {user_id}")
-        if _ := check_ocr_file_count(user_id=user_id):
+        if check_ocr_file_count(user_id=user_id) and not is_admin_user(user_id):
             logger.info(f"OCR服务:[END] ==> user_id: {user_id} 超限额!")
             return EventSourceResponse(event_gen())
         if not conversation_id:
@@ -87,6 +87,12 @@ async def ocr_chat(token_checker: TokenChecker, query: str = Body(default=None, 
             payload = {"image": img}
             headers = {'content-type': 'application/x-www-form-urlencoded'}
             ocr_request_resp = requests.post(setting.OCR_BASE_URL, headers=headers, params=params, data=payload)
+            add_file_to_db(AddFileToDBDTO(file_name=file.filename,
+                                          file_path='dify',
+                                          # meta_data: Any = None
+                                          file_extension=file.filename.split('.')[-1],
+                                          biz_type=FileTypeEnum.OCR,
+                                          created_user_id=user_id))
             if ocr_request_resp.status_code == 200:
                 raw_ocr_text = '\n'.join([words.get('words') for words in ocr_request_resp.json().get('words_result')])
                 query = ''.join([query, raw_ocr_text])
@@ -103,12 +109,7 @@ async def ocr_chat(token_checker: TokenChecker, query: str = Body(default=None, 
                                            'conversation_id': conversation_id,
                                            'user': token_checker,
                                            'response_mode': 'streaming'})
-        add_file_to_db(AddFileToDBDTO(file_name=file.filename,
-                                      file_path='dify',
-                                      # meta_data: Any = None
-                                      file_extension=file.filename.split('.')[-1],
-                                      biz_type=FileTypeEnum.OCR,
-                                      created_user_id=user_id))
+
         logger.info(f"🟢 OCR服务:[END] ==> user_id: {user_id} 成功!")
         return EventSourceResponse(response)
     except BaseException as e:

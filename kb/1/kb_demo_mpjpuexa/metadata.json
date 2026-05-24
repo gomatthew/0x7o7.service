@@ -1,0 +1,28 @@
+{
+  "knowledge_base_id": "kb_demo_mpjpuexa",
+  "user_id": 1,
+  "name": "AI Workflow Operations Manual",
+  "description": "Frontend integration knowledge base for the AI workflow demo.",
+  "business_type": "knowledge_workflow",
+  "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
+  "embedding_dimension": 1024,
+  "chunk_size": 600,
+  "chunk_overlap": 120,
+  "document_count": 1,
+  "chunk_count": 1,
+  "documents": [
+    {
+      "document_id": "doc_1da31df29b74",
+      "filename": "ragchat-ui-test.md",
+      "original_filename": "ragchat-ui-test.md",
+      "file_path": "docs/ragchat-ui-test.md",
+      "file_type": "md",
+      "chunk_count": 1,
+      "created_at": "2026-05-24T19:50:35"
+    }
+  ],
+  "path": "kb/1/kb_demo_mpjpuexa",
+  "absolute_path": "/Users/0x7o7/workspace/0x7o7.service.v1/kb/1/kb_demo_mpjpuexa",
+  "created_at": "2026-05-24T19:50:35",
+  "updated_at": "2026-05-24T19:50:35"
+}

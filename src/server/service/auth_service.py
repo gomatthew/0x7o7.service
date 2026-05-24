@@ -1,26 +1,34 @@
 import traceback
-from fastapi import Body, Response
+from fastapi import Body, Request, Response, BackgroundTasks
 from src.server.dto import UpdateUserDto, ApiCommonResponseDTO
 from src.configs import logger, get_setting
 from src.server.db.repository import get_user_id_from_db, update_user_to_db, get_user_by_id
 from src.server.libs import bp, dt, token_handler, send_mail
-from src.server.utils import TokenChecker
+from src.server.libs.redis_lib import async_rate_limit
+from src.server.utils import TokenChecker, get_client_ip
 
 setting = get_setting()
 
 
-def user_login(response: Response, username: str = Body(..., description="用户名"),
-               password: str = Body(..., description="密码")):
+async def user_login(request: Request, response: Response, background_tasks: BackgroundTasks,
+                     username: str = Body(..., description="用户名"),
+                     password: str = Body(..., description="密码")):
     try:
         logger.info(f"🟢 用户登录:[START] ==> {username}")
+        client_ip = get_client_ip(request)
+        ip_limited, _ = await async_rate_limit(f"login_ip:{client_ip}", setting.LOGIN_IP_LIMIT, setting.LOGIN_IP_TTL)
+        if ip_limited:
+            return ApiCommonResponseDTO(message="login.rateLimited", data={}, status=429).model_dict()
         if user_obj := get_user_id_from_db(username):
             db_password = user_obj.password
             if bp.verify_password(password, db_password):
                 token, expire_hours = token_handler.generate_token(user_obj.id)
-                update_user_to_db(user_obj.id, UpdateUserDto(token=token, last_login_time=dt.datetime))
+                user_role = user_obj.role or setting.GUEST_ROLE
+                update_user_to_db(user_obj.id, UpdateUserDto(token=token, last_login_time=dt.datetime, role=user_role))
                 logger.info(f'🟢 用户登录:[END] ==> {username} 成功!')
-                send_mail(message=f'用户登录:{user_obj.mail}', receiver_email=setting.RECEIVER,
-                          subject=f'用户{user_obj.mail}登录成功!')
+                background_tasks.add_task(send_mail, message=f'用户登录:{user_obj.mail}',
+                                          receiver_email=setting.RECEIVER,
+                                          subject=f'用户{user_obj.mail}登录成功!')
                 response.set_cookie(
                     key="access_token",
                     value=token,
@@ -31,6 +39,7 @@ def user_login(response: Response, username: str = Body(..., description="用户
                 )
                 return ApiCommonResponseDTO(message="login.success",
                                             data={'user_id': user_obj.id, 'mail': user_obj.mail,
+                                                  'role': user_role,
                                                   'created_time': user_obj.created_time}).model_dict()
             else:
                 logger.info(f'🟢 用户登录:[END] ==> {username} 失败!')

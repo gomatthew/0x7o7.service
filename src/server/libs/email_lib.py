@@ -3,6 +3,7 @@ import smtplib
 from src.configs import get_setting, logger
 from email.mime.text import MIMEText
 from email.header import Header
+from email.utils import formataddr
 
 setting = get_setting()
 
@@ -21,7 +22,7 @@ def send_mail(message: str, receiver_email: str, subject: str):
 
     # 创建 MIMEText 邮件对象（纯文本）
     message = MIMEText(body, 'plain', 'utf-8')
-    message['From'] = Header("0x7o7 WorkSpace", 'utf-8')  # 工作室名称
+    message['From'] = formataddr(("0x7o7 WorkSpace", sender_email))  # 工作室名称
     message['To'] = Header(receiver_email, 'utf-8')
     message['Subject'] = Header(subject, 'utf-8')
 
@@ -35,5 +36,5 @@ def send_mail(message: str, receiver_email: str, subject: str):
         logger.error("❌ 邮件发送失败：", e)
 
 
-# if __name__ == '__main__':
-#     send_mail()
+if __name__ == '__main__':
+    send_mail(message='test', receiver_email=setting.RECEIVER, subject='用户gomatt6688@gmail.com登录成功!')

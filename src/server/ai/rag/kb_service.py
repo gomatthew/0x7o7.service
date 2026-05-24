@@ -1,284 +1,366 @@
+# -*- coding: utf-8 -*-
+import datetime
 import json
+import os
 import traceback
-
-import requests
-from fastapi import Body, File, UploadFile, Query
+import uuid
 from typing import Optional
-from urllib.parse import urljoin
-from src.enum import UploadRagFileTypeEnum, FileTypeEnum
+
+from fastapi import Body, File, Form, Query, UploadFile
+
 from src.configs import get_setting, logger
-from src.server.db.repository import add_file_to_db, check_file_count, get_file_list_from_db
-from src.server.dto import ApiCommonResponseDTO, AddFileToDBDTO
+from src.enum import FileTypeEnum, RecordStatusEnum, UploadRagFileTypeEnum
+from src.server.ai.rag.context_service import context_builder
+from src.server.ai.rag.document_chunker_service import document_chunker
+from src.server.ai.rag.document_loader_service import document_loader_service
+from src.server.ai.rag.query_service import query_processor
+from src.server.ai.rag.retrieval_service import retrieval_pipeline
+from src.server.ai.rag.vector_store_service import faiss_vector_store_service
+from src.server.db.repository import add_file_to_db, create_kb_to_db, get_file_list_from_db, get_kb_from_db, \
+    get_kb_list_from_db
+from src.server.db.repository.ai_repository import delete_kb_from_db
+from src.server.dto import AddFileToDBDTO, ApiCommonResponseDTO
 from src.server.utils import TokenChecker
-from src.server.db.repository.ai_repository import create_kb_to_db, get_kb_list_from_db, delete_kb_from_db
 
 setting = get_setting()
-kb_base_url = urljoin(setting.DIFY_SERVER_URL, 'datasets')
-kb_file_base_url = urljoin(setting.DIFY_SERVER_URL, 'datasets/')
+
+
+def get_current_user_id(token_checker: TokenChecker = None, user_id: Optional[int | str] = None):
+    if isinstance(user_id, (int, str)):
+        return str(user_id)
+    if isinstance(token_checker, (int, str)) and token_checker:
+        return str(token_checker)
+    return None
+
+
+def get_now():
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def get_kb_relative_path(user_id: str, kb_id: str):
+    return os.path.join("kb", str(user_id), kb_id)
+
+
+def get_kb_absolute_path(kb_path: str):
+    if os.path.isabs(kb_path):
+        return kb_path
+    return os.path.join(setting.BASE_PATH, kb_path)
+
+
+def get_metadata_path(kb_path: str):
+    return os.path.join(get_kb_absolute_path(kb_path), "metadata.json")
+
+
+def read_metadata(kb_path: str):
+    metadata_path = get_metadata_path(kb_path)
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError("知识库 metadata.json 不存在")
+    except BaseException as e:
+        logger.error(e)
+        logger.error(traceback.format_exc())
+        raise RuntimeError("知识库 metadata.json 损坏或不可读取")
+
+
+def write_metadata(kb_path: str, metadata: dict):
+    metadata_path = get_metadata_path(kb_path)
+    os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+
+def get_kb_record(kb_id: str):
+    record = get_kb_from_db(kb_id)
+    if not record:
+        raise FileNotFoundError("知识库不存在")
+    if not record.get("kb_path"):
+        raise RuntimeError("知识库未记录本地文件路径")
+    return record
 
 
 def create_kb(token_checker: TokenChecker,
               kb_name: str = Body(..., description="知识库名称"),
-              kb_description: Optional[str] = Body(None, description="知识库描述")) -> ApiCommonResponseDTO:
-    """创建 dify 知识库"""
+              kb_description: Optional[str] = Body(None, description="知识库描述"),
+              business_type: str = Body("default", description="业务类型"),
+              knowledge_base_id: Optional[str] = Body(None, description="知识库ID"),
+              user_id: Optional[int] = Body(None, description="用户ID")) -> ApiCommonResponseDTO:
     try:
-        if not (user_id := token_checker):
+        current_user_id = get_current_user_id(token_checker, user_id)
+        if not current_user_id:
             return ApiCommonResponseDTO(message="用户未登录!", status=401).model_dict()
-        logger.info(f'🟢 创建RAG知识库 [START] ===> {user_id}')
-        dify_kb_name = '|user_id:'.join([kb_name, user_id])
-        resp = requests.post(kb_base_url, headers={"Content-Type": "application/json",
-                                                   "Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"},
-                             json={'name': dify_kb_name, 'description': kb_description})
-        match resp.status_code:
-            case 200:
-                kb_id = resp.json().get('id')
-                create_kb_to_db(kb_name=kb_name, kb_description=kb_description,
-                                kb_id=kb_id, user_id=user_id)
-                logger.info(f'🟢 创建RAG知识库 [END] ===> {user_id}')
-                return ApiCommonResponseDTO(status=201, message='success', data={'kb_id': kb_id}).model_dict()
-            case 409:
-                logger.info(resp.json())
-                return ApiCommonResponseDTO(status=400, message="知识库名称重复!").model_dict()
-            case _:
-                return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        kb_id = knowledge_base_id or f"kb_{uuid.uuid4().hex[:12]}"
+        kb_path = get_kb_relative_path(current_user_id, kb_id)
+        abs_kb_path = get_kb_absolute_path(kb_path)
+        docs_path = os.path.join(abs_kb_path, "docs")
+        os.makedirs(docs_path, exist_ok=True)
+        now = get_now()
+        metadata = {
+            "knowledge_base_id": kb_id,
+            "user_id": int(current_user_id) if str(current_user_id).isdigit() else current_user_id,
+            "name": kb_name,
+            "description": kb_description,
+            "business_type": business_type,
+            "embedding_model": setting.EMBEDDING_MODEL,
+            "embedding_dimension": setting.EMBEDDING_DIMENSION,
+            "chunk_size": setting.RAG_CHUNK_SIZE,
+            "chunk_overlap": setting.RAG_CHUNK_OVERLAP,
+            "document_count": 0,
+            "chunk_count": 0,
+            "documents": [],
+            "path": kb_path,
+            "absolute_path": abs_kb_path,
+            "created_at": now,
+            "updated_at": now,
+        }
+        write_metadata(kb_path, metadata)
+        create_kb_to_db(kb_name=kb_name, kb_description=kb_description, kb_id=kb_id,
+                        user_id=current_user_id, kb_path=kb_path)
+        return ApiCommonResponseDTO(status=200, message="success", data={
+            "knowledge_base_id": kb_id,
+            "kb_id": kb_id,
+            "path": kb_path,
+        }).model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
-        return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        return ApiCommonResponseDTO(status=500, message=str(e)).model_dict()
 
 
 def get_kb_list(token_checker: TokenChecker,
                 page: int = Query(1, description="页数"),
-                limit: int = Query(default=10, description="每页数据数")) -> ApiCommonResponseDTO:
-    """获取 Dify 知识库列表  """
+                limit: int = Query(default=10, description="每页数据数"),
+                user_id: Optional[int] = Query(None, description="用户ID")) -> ApiCommonResponseDTO:
     try:
-        if not (user_id := token_checker):
-            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
-        logger.info(f'🟢 获取RAG知识库列表 [START] ===> {user_id}')
-        if data := get_kb_list_from_db(user_id=user_id, page_no=page, page_size=limit):
-            logger.info(f'🟢 获取RAG知识库列表 [END] ===> {user_id}成功!')
-            return ApiCommonResponseDTO(status=200, data=data).model_dict()
-        else:
-            logger.info(f'🟢 获取RAG知识库列表 [END] ===> {user_id} 没有数据!')
-            return ApiCommonResponseDTO(status=200, message="no data").model_dict()
+        current_user_id = get_current_user_id(token_checker, user_id)
+        if not current_user_id:
+            return ApiCommonResponseDTO(message="用户未登录!", status=401).model_dict()
+        rows = get_kb_list_from_db(user_id=current_user_id, page_no=page, page_size=limit) or []
+        data = []
+        for row in rows:
+            item = dict(row)
+            try:
+                metadata = read_metadata(row.get("kb_path"))
+                item.update({
+                    "business_type": metadata.get("business_type"),
+                    "embedding_model": metadata.get("embedding_model"),
+                    "document_count": metadata.get("document_count", 0),
+                    "chunk_count": metadata.get("chunk_count", 0),
+                    "updated_at": metadata.get("updated_at"),
+                })
+            except BaseException as e:
+                logger.error(e)
+                item.update({"metadata_status": "error", "metadata_message": str(e)})
+            data.append(item)
+        return ApiCommonResponseDTO(status=200, message="success", data=data).model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
-        return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        return ApiCommonResponseDTO(status=500, message=str(e)).model_dict()
+
+
+def get_kb_detail(token_checker: TokenChecker,
+                  kb_id: str = Query(..., description="kb_id")) -> ApiCommonResponseDTO:
+    try:
+        record = get_kb_record(kb_id)
+        metadata = read_metadata(record.get("kb_path"))
+        return ApiCommonResponseDTO(status=200, message="success", data={**record, **metadata}).model_dict()
+    except BaseException as e:
+        logger.error(e)
+        logger.error(traceback.format_exc())
+        return ApiCommonResponseDTO(status=400, message=str(e)).model_dict()
 
 
 def delete_kb(token_checker: TokenChecker, kb_id: str = Body(..., description="kb_id")):
-    """删除dify 知识库"""
     try:
-        if not (user_id := token_checker):
-            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
+        if not token_checker:
+            return ApiCommonResponseDTO(message="用户未登录!", status=401).model_dict()
         delete_kb_from_db(kb_id=kb_id)
         return ApiCommonResponseDTO().model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
-        return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        return ApiCommonResponseDTO(status=500, message=str(e)).model_dict()
 
 
-def upload_file_to_kb(token_checker: TokenChecker, kb_id: str = Body(..., description="kb_id"),
-                      file: UploadFile = File(..., description="上传图片")):
-    """上传知识库文件"""
+def upload_file_to_kb(token_checker: TokenChecker,
+                      kb_id: str = Form(..., description="kb_id"),
+                      user_id: Optional[int] = Form(None, description="用户ID"),
+                      file: UploadFile = File(..., description="上传文件")):
     try:
-        if not (user_id := token_checker):
-            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
-        logger.info(f'🟢 上传RAG文件到DIFY [START] ===> {user_id}')
-        if _ := check_file_count(kb_id=kb_id):
-            return ApiCommonResponseDTO(status=200, message="upload file limit").model_dict()
-        file_upload_url = urljoin(kb_file_base_url, f'{kb_id}/document/create-by-file')
-        resp = requests.post(file_upload_url, headers={"Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"},
-                             files={'data': (None, json.dumps({
-                                 "indexing_technique": "high_quality",
-                                 "process_rule": {"mode": "automatic"},
-                             }), "application/json"), 'file': (file.filename, file.file.read(), file.content_type)})
-        if resp.status_code == 200:
-            res_data = resp.json()
-            add_file_to_db(AddFileToDBDTO(file_id=res_data.get('document').get('id'),
-                                          file_name=file.filename,
-                                          file_path='dify',
-                                          meta_data={'batch': res_data.get('batch')},
-                                          file_extension=file.filename.split('.')[-1],
-                                          biz_type=FileTypeEnum.KB_FILE,
-                                          biz_id=kb_id,
-                                          created_user_id=user_id))
-            # document_id = res_data.get('document').get('id')
-            # logger.info('document_id: {}'.format(document_id))
-            logger.info(f'🟢 上传RAG文件到DIFY [END] ===> {user_id} 成功!')
-            return ApiCommonResponseDTO(status=200, message='success',
-                                        data={'batch': res_data.get('batch')}).model_dict()
-        else:
-            return ApiCommonResponseDTO(status=400, message=resp.json().get('message')).model_dict()
+        current_user_id = get_current_user_id(token_checker, user_id)
+        if not current_user_id:
+            return ApiCommonResponseDTO(message="用户未登录!", status=401).model_dict()
+        record = get_kb_record(kb_id)
+        metadata = read_metadata(record.get("kb_path"))
+        kb_path = record.get("kb_path")
+        abs_kb_path = get_kb_absolute_path(kb_path)
+        docs_path = os.path.join(abs_kb_path, "docs")
+        os.makedirs(docs_path, exist_ok=True)
+        original_filename = os.path.basename(file.filename)
+        document_id = f"doc_{uuid.uuid4().hex[:12]}"
+        filename = original_filename
+        file_path = os.path.join(docs_path, filename)
+        if os.path.exists(file_path):
+            filename = f"{document_id}_{original_filename}"
+            file_path = os.path.join(docs_path, filename)
+        with open(file_path, "wb") as f:
+            f.write(file.file.read())
+        file_type = os.path.splitext(filename)[-1].lower().lstrip(".")
+        base_metadata = {
+            "document_id": document_id,
+            "source": filename,
+            "filename": filename,
+            "original_filename": original_filename,
+            "file_type": file_type,
+        }
+        loaded_docs = document_loader_service.load(file_path, metadata=base_metadata)
+        chunks = document_chunker.split_documents(
+            loaded_docs,
+            chunk_size=metadata.get("chunk_size") or setting.RAG_CHUNK_SIZE,
+            chunk_overlap=metadata.get("chunk_overlap") or setting.RAG_CHUNK_OVERLAP,
+        )
+        faiss_vector_store_service.save_chunks(
+            abs_kb_path,
+            chunks,
+            embedding_model=metadata.get("embedding_model") or setting.EMBEDDING_MODEL,
+        )
+        doc_meta = {
+            "document_id": document_id,
+            "filename": filename,
+            "original_filename": original_filename,
+            "file_path": os.path.join("docs", filename),
+            "file_type": file_type,
+            "chunk_count": len(chunks),
+            "created_at": get_now(),
+        }
+        metadata.setdefault("documents", []).append(doc_meta)
+        metadata["document_count"] = len(metadata.get("documents", []))
+        metadata["chunk_count"] = sum([item.get("chunk_count", 0) for item in metadata.get("documents", [])])
+        metadata["updated_at"] = get_now()
+        write_metadata(kb_path, metadata)
+        add_file_to_db(AddFileToDBDTO(file_id=document_id,
+                                      file_name=filename,
+                                      file_path=doc_meta.get("file_path"),
+                                      meta_data={"chunk_count": len(chunks), "kb_path": kb_path},
+                                      file_extension=file_type,
+                                      biz_type=FileTypeEnum.KB_FILE,
+                                      biz_id=kb_id,
+                                      created_user_id=current_user_id))
+        return ApiCommonResponseDTO(status=200, message="success", data={
+            "knowledge_base_id": kb_id,
+            "filename": filename,
+            "chunk_count": len(chunks),
+            "embedding_model": metadata.get("embedding_model"),
+            "status": "success",
+        }).model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
-        return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        return ApiCommonResponseDTO(status=500, message=str(e)).model_dict()
 
 
 def upload_text_to_kb(token_checker: TokenChecker, kb_id: str = Body(..., description="kb_id")):
-    """上传知识库文本 """
     try:
-        if not (user_id := token_checker):
-            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
-        text_upload_url = urljoin(kb_file_base_url, f'/{kb_id}/document/create-by-file')
-        resp = requests.post(text_upload_url, headers={"Content-Type": "application/json",
-                                                       "Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"},
-                             json={"name": "<string>",
-                                   "text": "<string>",
-                                   "indexing_technique": "high_quality",
-                                   "doc_form": "text_model",
-                                   "doc_language": "中文",
-                                   "process_rule": {
-                                       "mode": "automatic",
-                                       "rules": {
-                                           "pre_processing_rules": [
-                                               {
-                                                   "id": "remove_extra_spaces",
-                                                   "enabled": True
-                                               }
-                                           ],
-                                           "segmentation": {
-                                               "separator": "<string>",
-                                               "max_tokens": 123
-                                           },
-                                           "parent_mode": "full-doc",
-                                           "subchunk_segmentation": {
-                                               "separator": "<string>",
-                                               "max_tokens": 123,
-                                               "chunk_overlap": 123
-                                           }
-                                       }
-                                   },
-                                   "retrieval_model": {
-                                       "search_method": "hybrid_search",
-                                       "reranking_enable": True,
-                                       "reranking_mode": {
-                                           "reranking_provider_name": "<string>",
-                                           "reranking_model_name": "<string>"
-                                       },
-                                       "top_k": 123,
-                                       "score_threshold_enabled": True,
-                                       "score_threshold": 123,
-                                       "weights": 123
-                                   },
-                                   "embedding_model": "<string>",
-                                   "embedding_model_provider": "<string>"})
-        return ApiCommonResponseDTO(status=400, message="fail").model_dict()
+        if not token_checker:
+            return ApiCommonResponseDTO(message="用户未登录!", status=401).model_dict()
+        return ApiCommonResponseDTO(status=400, message="not supported yet").model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
-        return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        return ApiCommonResponseDTO(status=500, message=str(e)).model_dict()
 
 
 def get_file_progress(token_checker: TokenChecker, kb_id: str = Query(..., description="kb_id"),
-                      batch: str = Query(..., description="batch")):
+                      batch: str = Query(None, description="batch")):
     try:
-        if not (user_id := token_checker):
-            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
-        progress_url = urljoin(kb_file_base_url, f'{kb_id}/documents/{batch}/indexing-status')
-        resp = requests.get(progress_url, headers={"Content-Type": "application/json",
-                                                   "Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"})
-        if resp.status_code == 200:
-            resp_data = resp.json()
-            check_progress = [i.get('indexing_status') for i in resp_data.get('data')]
-            if all(status == UploadRagFileTypeEnum.COMPLETED.value for status in check_progress):
-                indexing_status = UploadRagFileTypeEnum.COMPLETED.value
-            else:
-                indexing_status = UploadRagFileTypeEnum.EMBEDDING.value
-            logger.info(indexing_status)
-            return ApiCommonResponseDTO(status=200, message="success",
-                                        data={'indexing_status': indexing_status}).model_dict()
-        else:
-            return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        if not token_checker:
+            return ApiCommonResponseDTO(message="用户未登录!", status=401).model_dict()
+        record = get_kb_record(kb_id)
+        abs_kb_path = get_kb_absolute_path(record.get("kb_path"))
+        indexing_status = UploadRagFileTypeEnum.COMPLETED.value if faiss_vector_store_service.index_file_exists(
+            abs_kb_path) else UploadRagFileTypeEnum.EMBEDDING.value
+        return ApiCommonResponseDTO(status=200, message="success", data={"indexing_status": indexing_status}).model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
-        return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        return ApiCommonResponseDTO(status=500, message=str(e)).model_dict()
 
 
-def get_kb_file_list():
-    """获取知识库文件列表"""
-    try:
-        return ApiCommonResponseDTO().model_dict()
-    except BaseException as e:
-        logger.error(e)
-        logger.error(traceback.format_exc())
-        return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+def get_kb_file_list(token_checker: TokenChecker, kb_id: str = Query(..., description="kb_id")):
+    return get_file_list(token_checker=token_checker, kb_id=kb_id)
 
 
 def delete_file_to_kb():
-    """删除知识库文件"""
     try:
-        return ApiCommonResponseDTO().model_dict()
+        return ApiCommonResponseDTO(status=400, message="not supported yet").model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
-        return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        return ApiCommonResponseDTO(status=500, message=str(e)).model_dict()
 
 
 def get_file_seg_list():
-    """获得文件切片"""
     try:
-        return ApiCommonResponseDTO().model_dict()
+        return ApiCommonResponseDTO(status=400, message="not supported yet").model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
-        return ApiCommonResponseDTO(status=500, message="fail").model_dict()
+        return ApiCommonResponseDTO(status=500, message=str(e)).model_dict()
 
 
-def rag_retrieve(token_checker: TokenChecker, kb_id: str = Body(..., description="kb_id"),
-                 query: str = Body(..., description="query")):
+async def rag_retrieve(token_checker: TokenChecker,
+                       kb_id: str = Body(..., description="kb_id"),
+                       query: str = Body(..., description="query"),
+                       top_k: Optional[int] = Body(None, description="最终召回数量"),
+                       fetch_k: Optional[int] = Body(None, description="初始召回数量"),
+                       score_threshold: Optional[float] = Body(None, description="相似度阈值"),
+                       reranker: bool = Body(False, description="是否启用重排序")):
     try:
-        if not (user_id := token_checker):
-            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
-        logger.info("🟢 [START] hit the kb.")
-        retrieve_url = urljoin(kb_file_base_url, f"{kb_id}/retrieve")
-        payload = {
-            "query": query,
-            "retrieval_model": {
-                "search_method": "hybrid_search",
-                "reranking_enable": True,
-                # "reranking_mode": {
-                #     "reranking_provider_name": "<string>",
-                #     "reranking_model_name": "<string>"
-                # },
-                "top_k": 1,
-                "score_threshold_enabled": True,
-                # "score_threshold": 123,
-                # "weights": 123,
-                # "metadata_filtering_conditions": {
-                #     "logical_operator": "and",
-                #     "conditions": [
-                #         {
-                #             "name": "<string>",
-                #             "comparison_operator": "<string>",
-                #             "value": "<string>"
-                #         }
-                #     ]
-                # }
-            }
-        }
-        resp = requests.post(retrieve_url, headers={"Content-Type": "application/json",
-                                                    "Authorization": f"Bearer {setting.DIFY_KB_SECRET_KEY}"},
-                             json=payload)
-        logger.info('🟢[END] hit the kb finish.')
-        return ApiCommonResponseDTO(status=200, message="success", data=resp.json()).model_dict()
+        valid, normalized_query = query_processor.validate(query)
+        if not valid:
+            return ApiCommonResponseDTO(status=400, message=normalized_query).model_dict()
+        record = get_kb_record(kb_id)
+        metadata = read_metadata(record.get("kb_path"))
+        abs_kb_path = get_kb_absolute_path(record.get("kb_path"))
+        docs = await retrieval_pipeline.retrieve(
+            query=normalized_query,
+            kb_path=abs_kb_path,
+            top_k=top_k,
+            fetch_k=fetch_k,
+            score_threshold=score_threshold,
+            embedding_model=metadata.get("embedding_model"),
+            business_type=metadata.get("business_type"),
+            enable_reranker=reranker,
+        )
+        sources = context_builder.to_sources(docs)
+        records = [{"segment": {"content": item.get("content"), "metadata": item.get("metadata")},
+                    "score": item.get("score")} for item in sources]
+        return ApiCommonResponseDTO(status=200, message="success", data={
+            "knowledge_base_id": kb_id,
+            "sources": sources,
+            "records": records,
+            "reranker": reranker,
+        }).model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
+        return ApiCommonResponseDTO(status=500, message=str(e)).model_dict()
 
 
 def get_file_list(token_checker: TokenChecker, kb_id: str = Query(..., description="kb_id")):
     try:
-        if not (user_id := token_checker):
-            return ApiCommonResponseDTO(message="用户未登录!").model_dict()
-        if data := get_file_list_from_db(kb_id):
-            return ApiCommonResponseDTO(status=200, message="success", data=data).model_dict()
-        else:
-            return ApiCommonResponseDTO(status=201, message="no data", ).model_dict()
+        if not token_checker:
+            return ApiCommonResponseDTO(message="用户未登录!", status=401).model_dict()
+        record = get_kb_record(kb_id)
+        metadata = read_metadata(record.get("kb_path"))
+        db_files = get_file_list_from_db(kb_id) or []
+        return ApiCommonResponseDTO(status=200, message="success", data={
+            "documents": metadata.get("documents", []),
+            "db_files": db_files,
+        }).model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
+        return ApiCommonResponseDTO(status=500, message=str(e)).model_dict()
