@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import uuid
 from sqlalchemy import and_, desc
-from sqlalchemy.dialects.mysql import insert
+from sqlalchemy.dialects.postgresql import insert
 from src.server.db.ai_models.message_model import MessageModel
 from src.server.db.ai_models.conversation_model import ConversationModel
 from src.server.db.ai_models.knowledge_base_model import KnowledgeBase
@@ -139,7 +139,10 @@ def add_conversation_to_db(session, conversation_id=None, title=None, llm_model=
     c_data = {'conversation_id': conversation_id if conversation_id else uuid.uuid4().hex, 'conversation_title': title,
               'create_time': create_time, 'finish_time': finish_time, 'llm_model': llm_model, 'user_id': user_id}
     insert_stmt = insert(ConversationModel).values(**c_data)
-    on_duplicate_key_stmt = insert_stmt.on_duplicate_key_update({"finish_time": dt.method_datetime()})
-    session.execute(on_duplicate_key_stmt)
+    on_conflict_stmt = insert_stmt.on_conflict_do_update(
+        index_elements=[ConversationModel.conversation_id],
+        set_={"finish_time": dt.method_datetime()},
+    )
+    session.execute(on_conflict_stmt)
     session.commit()
     return conversation_id

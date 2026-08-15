@@ -10,10 +10,10 @@ setting = get_setting()
 
 def send_mail(message: str, receiver_email: str, subject: str):
     # ========== 基本信息 ==========
-    smtp_server = 'smtp.163.com'  # 163邮箱SMTP服务器地址
-    smtp_port = 465  # SSL端口
+    smtp_server = setting.SMTP_HOST
+    smtp_port = setting.SMTP_PORT
     sender_email = setting.SENDER  # 发件人邮箱
-    sender_pass = setting.Mail163PASS  # 授权码（不是邮箱登录密码）
+    sender_pass = setting.SMTP_PASSWORD
     receiver_email = receiver_email  # 收件人邮箱
 
     # ========== 邮件内容 ==========
@@ -28,6 +28,8 @@ def send_mail(message: str, receiver_email: str, subject: str):
 
     # ========== 发送邮件 ==========
     try:
+        if not sender_email or not sender_pass or not receiver_email:
+            raise RuntimeError("SMTP configuration is incomplete")
         with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
             server.login(sender_email, sender_pass)
             server.sendmail(sender_email, [receiver_email], message.as_string())

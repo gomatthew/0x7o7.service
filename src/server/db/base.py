@@ -13,6 +13,14 @@ engine = create_engine(
     json_serializer=lambda obj: json.dumps(obj, ensure_ascii=False), pool_recycle=1800
 )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Repository functions return ORM records after their short-lived transaction
+# has committed.  Keep already-loaded scalar attributes available after that
+# commit so callers never trigger a refresh on a closed session.
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,
+    bind=engine,
+)
 
 Base: DeclarativeMeta = declarative_base()

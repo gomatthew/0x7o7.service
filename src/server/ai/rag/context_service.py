@@ -13,15 +13,17 @@ class ContextBuilder:
         parts = []
         total_len = 0
         for index, doc in enumerate(docs, start=1):
-            filename = doc.metadata.get("filename") or doc.metadata.get("source") or "未知文件"
+            filename = doc.metadata.get("filename") or doc.metadata.get("source") or "document"
             page = doc.metadata.get("page")
             section_title = doc.metadata.get("section_title")
-            source_line = f"来源：{filename}"
+            source_id = doc.metadata.get("source_id") or f"source-{index}"
+            source_line = f"SOURCE_FILE: {filename}"
             if page:
-                source_line += f" 第 {page} 页"
+                source_line += f"; PAGE: {page}"
             if section_title:
-                source_line += f" / {section_title}"
-            part = f"[资料{index}]\n{source_line}\n内容：\n{doc.content}\n"
+                source_line += f"; SECTION: {section_title}"
+            source_line += f"; SOURCE_ID: {source_id}"
+            part = f"[SOURCE {index}]\n{source_line}\nCONTENT:\n{doc.content}\n"
             if total_len + len(part) > max_chars:
                 remain = max_chars - total_len
                 if remain > 120:
@@ -33,7 +35,21 @@ class ContextBuilder:
 
     @staticmethod
     def to_sources(docs: list[RetrievedDocumentDto]) -> list[dict]:
-        return [{"content": doc.content, "score": doc.score, "metadata": doc.metadata} for doc in docs]
+        sources = []
+        for index, doc in enumerate(docs, start=1):
+            metadata = dict(doc.metadata or {})
+            filename = metadata.get("original_filename") or metadata.get("filename") or metadata.get("source") or "document"
+            chunk_index = metadata.get("chunk_index")
+            source_id = metadata.get("source_id") or f"source-{index}"
+            excerpt = " ".join(doc.content.split())[:360]
+            sources.append({
+                "source_id": source_id,
+                "filename": filename,
+                "page": metadata.get("page"),
+                "chunk_index": chunk_index,
+                "excerpt": excerpt,
+            })
+        return sources
 
 
 context_builder = ContextBuilder()

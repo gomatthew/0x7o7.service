@@ -1,0 +1,9 @@
+[Unit]
+Description=Delete expired Dify workflow logs
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=120
+ExecStart=/usr/bin/docker exec docker-worker-1 celery -A celery_entrypoint.celery call schedule.clean_workflow_runlogs_precise.clean_workflow_runlogs_precise --queue retention

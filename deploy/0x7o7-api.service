@@ -1,0 +1,23 @@
+[Unit]
+Description=0x7o7 AI Studio API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/0x7o7/current-api
+EnvironmentFile=/etc/0x7o7/api.env
+ExecStartPre=/opt/0x7o7/current-api/.venv/bin/python -c "from src.server import create_tables; create_tables()"
+ExecStart=/opt/0x7o7/current-api/.venv/bin/gunicorn -c deploy/gunicorn_conf.py main:app
+Restart=always
+RestartSec=5
+TimeoutStartSec=90
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

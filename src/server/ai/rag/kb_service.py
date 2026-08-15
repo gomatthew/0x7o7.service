@@ -17,7 +17,7 @@ from src.server.ai.rag.query_service import query_processor
 from src.server.ai.rag.retrieval_service import retrieval_pipeline
 from src.server.ai.rag.vector_store_service import faiss_vector_store_service
 from src.server.db.repository import add_file_to_db, create_kb_to_db, get_file_list_from_db, get_kb_from_db, \
-    get_kb_list_from_db
+    get_kb_list_from_db, delete_file_from_db
 from src.server.db.repository.ai_repository import delete_kb_from_db
 from src.server.dto import AddFileToDBDTO, ApiCommonResponseDTO
 from src.server.utils import TokenChecker
@@ -292,9 +292,104 @@ def get_kb_file_list(token_checker: TokenChecker, kb_id: str = Query(..., descri
     return get_file_list(token_checker=token_checker, kb_id=kb_id)
 
 
-def delete_file_to_kb():
+def delete_file_to_kb(token_checker: TokenChecker,
+                      kb_id: str = Body(..., description="kb_id"),
+                      document_id: Optional[str] = Body(None, description="document_id"),
+                      file_id: Optional[str] = Body(None, description="file_id"),
+                      filename: Optional[str] = Body(None, description="filename"),
+                      file_name: Optional[str] = Body(None, description="file_name")):
     try:
-        return ApiCommonResponseDTO(status=400, message="not supported yet").model_dict()
+        if not token_checker:
+            return ApiCommonResponseDTO(message="用户未登录!", status=401).model_dict()
+
+        target_document_id = document_id or file_id
+        target_filename = filename or file_name
+        if not target_document_id and not target_filename:
+            return ApiCommonResponseDTO(status=400, message="document_id or filename is required").model_dict()
+
+        record = get_kb_record(kb_id)
+        kb_path = record.get("kb_path")
+        abs_kb_path = get_kb_absolute_path(kb_path)
+        metadata = read_metadata(kb_path)
+        documents = metadata.get("documents", []) or []
+        deleted_doc = None
+        remaining_docs = []
+
+        for doc in documents:
+            doc_id = doc.get("document_id")
+            doc_filename = doc.get("filename")
+            doc_original_filename = doc.get("original_filename")
+            if (
+                    (target_document_id and doc_id == target_document_id)
+                    or (target_filename and target_filename in [doc_filename, doc_original_filename])
+            ):
+                deleted_doc = doc
+                continue
+            remaining_docs.append(doc)
+
+        if not deleted_doc:
+            return ApiCommonResponseDTO(status=404, message="知识文件不存在").model_dict()
+
+        deleted_file_path = deleted_doc.get("file_path")
+        if deleted_file_path:
+            abs_file_path = os.path.join(abs_kb_path, deleted_file_path)
+            if os.path.isfile(abs_file_path):
+                os.remove(abs_file_path)
+
+        embedding_model = metadata.get("embedding_model") or setting.EMBEDDING_MODEL
+        faiss_vector_store_service.refresh_cache(abs_kb_path, embedding_model=embedding_model, vector_store=None)
+        for index_file in ["index.faiss", "index.pkl"]:
+            index_path = os.path.join(abs_kb_path, index_file)
+            if os.path.exists(index_path):
+                os.remove(index_path)
+
+        rebuilt_chunks = []
+        rebuilt_docs = []
+        for doc in remaining_docs:
+            doc_file_path = doc.get("file_path")
+            if not doc_file_path:
+                continue
+            abs_doc_file_path = os.path.join(abs_kb_path, doc_file_path)
+            if not os.path.isfile(abs_doc_file_path):
+                continue
+            base_metadata = {
+                "document_id": doc.get("document_id"),
+                "source": doc.get("filename"),
+                "filename": doc.get("filename"),
+                "original_filename": doc.get("original_filename"),
+                "file_type": doc.get("file_type"),
+            }
+            loaded_docs = document_loader_service.load(abs_doc_file_path, metadata=base_metadata)
+            chunks = document_chunker.split_documents(
+                loaded_docs,
+                chunk_size=metadata.get("chunk_size") or setting.RAG_CHUNK_SIZE,
+                chunk_overlap=metadata.get("chunk_overlap") or setting.RAG_CHUNK_OVERLAP,
+            )
+            rebuilt_chunks.extend(chunks)
+            rebuilt_docs.append({**doc, "chunk_count": len(chunks)})
+
+        if rebuilt_chunks:
+            faiss_vector_store_service.save_chunks(
+                abs_kb_path,
+                rebuilt_chunks,
+                embedding_model=embedding_model,
+            )
+
+        metadata["documents"] = rebuilt_docs
+        metadata["document_count"] = len(rebuilt_docs)
+        metadata["chunk_count"] = sum([item.get("chunk_count", 0) for item in rebuilt_docs])
+        metadata["updated_at"] = get_now()
+        write_metadata(kb_path, metadata)
+        delete_file_from_db(kb_id=kb_id,
+                            file_id=deleted_doc.get("document_id"),
+                            file_name=deleted_doc.get("filename"))
+        return ApiCommonResponseDTO(status=200, message="success", data={
+            "knowledge_base_id": kb_id,
+            "deleted_document_id": deleted_doc.get("document_id"),
+            "deleted_filename": deleted_doc.get("filename"),
+            "document_count": metadata.get("document_count", 0),
+            "chunk_count": metadata.get("chunk_count", 0),
+        }).model_dict()
     except BaseException as e:
         logger.error(e)
         logger.error(traceback.format_exc())
@@ -335,8 +430,8 @@ async def rag_retrieve(token_checker: TokenChecker,
             enable_reranker=reranker,
         )
         sources = context_builder.to_sources(docs)
-        records = [{"segment": {"content": item.get("content"), "metadata": item.get("metadata")},
-                    "score": item.get("score")} for item in sources]
+        records = [{"segment": {"content": doc.content, "metadata": doc.metadata},
+                    "score": doc.score} for doc in docs]
         return ApiCommonResponseDTO(status=200, message="success", data={
             "knowledge_base_id": kb_id,
             "sources": sources,

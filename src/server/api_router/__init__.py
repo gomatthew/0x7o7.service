@@ -4,3 +4,7 @@ from src.server.api_router.service_router import service_router
 from src.server.api_router.ai_router import ai_router
 from src.server.api_router.rag_router import rag_router
 from src.server.api_router.chat_router import chat_router
+from src.server.api_router.demo_router import demo_router
+from src.server.api_router.health_router import health_router
+from src.server.api_router.lead_router import lead_router
+from src.server.api_router.crm_router import crm_router

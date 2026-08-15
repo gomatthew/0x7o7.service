@@ -25,6 +25,8 @@ class LLMService:
             temperature=setting.LLM_TEMPERATURE if temperature is None else temperature,
             top_p=setting.LLM_TOP_P,
             streaming=streaming,
+            request_timeout=setting.LLM_REQUEST_TIMEOUT,
+            max_retries=setting.LLM_MAX_RETRIES,
             **model_kwargs,
         )
 

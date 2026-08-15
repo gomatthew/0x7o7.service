@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import uuid
 from sqlalchemy import desc, and_
-from sqlalchemy.dialects.mysql import insert
+from sqlalchemy.dialects.postgresql import insert
 from src.configs import get_setting
 from src.server.db.session import with_session
 from src.server.db.models.file_model import FileModel
@@ -43,7 +43,7 @@ def add_file_to_db(session, file_dto: AddFileToDBDTO):
         file_extension=file_dto.file_extension,
         created_user_id=file_dto.created_user_id,
         created_user_name=file_dto.created_user_name,
-    ).prefix_with("IGNORE")
+    ).on_conflict_do_nothing(index_elements=[FileModel.id])
 
     session.execute(stmt)
     session.commit()
@@ -59,7 +59,28 @@ def get_file_by_id(session, file_id: str):
 
 @with_session
 def get_file_list_from_db(session, kb_id: str):
-    if q := session.query(FileModel).filter(FileModel.biz_id == kb_id).order_by(desc(FileModel.created_time)).all():
+    if q := session.query(FileModel).filter(and_(
+            FileModel.biz_id == kb_id,
+            FileModel.status == RecordStatusEnum.ACTIVATE.value,
+    )).order_by(desc(FileModel.created_time)).all():
         return [{'file_name': _q.file_name, 'file_id': _q.id, 'batch': _q.meta_data.get('batch')} for _q in q]
     else:
         return None
+
+
+@with_session
+def delete_file_from_db(session, kb_id: str, file_id: str = None, file_name: str = None):
+    query = session.query(FileModel).filter(FileModel.biz_id == kb_id)
+    if file_id:
+        query = query.filter(FileModel.id == file_id)
+    elif file_name:
+        query = query.filter(FileModel.file_name == file_name)
+    else:
+        return 0
+
+    rows = query.all()
+    for row in rows:
+        row.status = RecordStatusEnum.INACTIVATE.value
+
+    session.commit()
+    return len(rows)

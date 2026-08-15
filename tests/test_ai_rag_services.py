@@ -52,7 +52,8 @@ def test_document_chunker_and_context_builder():
     assert chunks[0].metadata["chunk_index"] == 0
     retrieved = [RetrievedDocumentDto(content=chunks[0].content, score=0.9, metadata=chunks[0].metadata)]
     context = context_builder.build(retrieved, max_chars=300)
-    assert "来源：manual.md 第 1 页" in context
+    assert "SOURCE_FILE: manual.md; PAGE: 1" in context
+    assert "SOURCE_ID: source-1" in context
     assert context_builder.build([], max_chars=300) == ""
 
 
@@ -145,7 +146,9 @@ def test_rag_retrieve_with_reranker_flag(tmp_path, monkeypatch):
     monkeypatch.setattr("src.server.ai.rag.kb_service.retrieval_pipeline.retrieve", fake_retrieve)
     resp = asyncio.run(rag_retrieve(token_checker="1", kb_id="kb_test", query="怎么部署", reranker=True))
     assert resp["status"] == 200
-    assert resp["data"]["sources"][0]["metadata"]["filename"] == "a.txt"
+    assert resp["data"]["sources"][0]["filename"] == "a.txt"
+    assert set(resp["data"]["sources"][0]) == {"filename", "page", "chunk_index", "excerpt", "source_id"}
+    assert resp["data"]["records"][0]["segment"]["metadata"]["filename"] == "a.txt"
 
 
 def test_chat_service_normal_and_rag(monkeypatch, tmp_path):

@@ -8,7 +8,7 @@ class UserDto(BaseModel):
     id: int = Field(..., description="id")
     user_nick_name: Optional[str] = Field(None, max_length=32, description="用户昵称")
     phone_number: Optional[str] = Field(None, max_length=11, description="手机号")
-    password: str = Field(..., description="密码")
+    password: Optional[str] = Field(None, description="密码")
     mail: Optional[str] = Field(None, description="邮箱")
     role: Optional[str] = Field(None, description="角色")
     status: Optional[int] = Field(1, description="用户状态 -1-无效 1-有效 0-未激活")
@@ -22,7 +22,7 @@ class AddUserDto(BaseModel):
     user_nick_name: Optional[str]
     phone_number: Optional[str]
     mail: str
-    password: str
+    password: Optional[str] = None
     role: Optional[str] = None
     created_user: str
 
@@ -41,7 +41,7 @@ class UserInfoDto(BaseModel):
     id: str | int
     user_nick_name: Optional[str] = None
     mail: str
-    password: str
+    password: Optional[str] = None
     role: Optional[str] = None
     phone_number: Optional[str] = None
     avatar: Optional[str] = None

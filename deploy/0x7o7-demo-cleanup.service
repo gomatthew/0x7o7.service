@@ -1,0 +1,13 @@
+[Unit]
+Description=Delete expired 0x7o7 demo documents
+After=0x7o7-api.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/0x7o7/current-api
+EnvironmentFile=/etc/0x7o7/api.env
+Environment=PYTHONPATH=/opt/0x7o7/current-api
+ExecStart=/opt/0x7o7/current-api/.venv/bin/python scripts/cleanup_expired_demos.py
+NoNewPrivileges=true
+PrivateTmp=true

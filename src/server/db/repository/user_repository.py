@@ -6,9 +6,16 @@ from src.server.db.models import UserModel
 from src.server.dto import AddUserDto, UpdateUserDto, UserInfoDto
 
 
+def normalize_user_id(user_id):
+    try:
+        return int(user_id)
+    except (TypeError, ValueError):
+        return user_id
+
+
 @with_session
 def get_user_info_from_db(session, user_id: str) -> UserInfoDto | None:
-    if user_obj := session.query(UserModel).filter(UserModel.id == user_id).first():
+    if user_obj := session.query(UserModel).filter(UserModel.id == normalize_user_id(user_id)).first():
         return UserInfoDto(**user_obj.__dict__)
     return None
 
@@ -34,7 +41,7 @@ def user_checkin_from_db(session, user_phone: str, user_email: str) -> Tuple[str
 @with_session
 def update_user_to_db(session, user_id, new_user: UpdateUserDto) -> (str, bool):
     """更新用户信息"""
-    if user_obj := session.query(UserModel).filter(and_(UserModel.id == user_id, UserModel.status == 1)).first():
+    if user_obj := session.query(UserModel).filter(and_(UserModel.id == normalize_user_id(user_id), UserModel.status == 1)).first():
         for k, v in new_user.model_dump().items():
             if v:
                 setattr(user_obj, k, v)
@@ -54,13 +61,20 @@ def add_user(session, user_obj: AddUserDto):
 
 @with_session
 def get_user_by_id(session, user_id: str) -> UserInfoDto | None:
-    if user_obj := session.query(UserModel).filter(and_(UserModel.id == user_id, UserModel.status == 1)).first():
+    if user_obj := session.query(UserModel).filter(and_(UserModel.id == normalize_user_id(user_id), UserModel.status == 1)).first():
+        return UserInfoDto(**user_obj.__dict__)
+    return None
+
+
+@with_session
+def get_user_by_email(session, email: str) -> UserInfoDto | None:
+    if user_obj := session.query(UserModel).filter(UserModel.mail == email.strip().lower()).first():
         return UserInfoDto(**user_obj.__dict__)
     return None
 
 
 @with_session
 def get_user_token_by_id(session, user_id: str) -> str | None:
-    if user_obj := session.query(UserModel).filter(UserModel.id == user_id).first():
+    if user_obj := session.query(UserModel).filter(UserModel.id == normalize_user_id(user_id)).first():
         return user_obj.token
     return None

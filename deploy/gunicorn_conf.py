@@ -2,13 +2,15 @@
 import os
 from src.configs.settings import BaseSetting
 
-timeout = 0
-daemon = True  # 设置守护进程
-bind = f'{BaseSetting.APP_HOST}:{BaseSetting.APP_PORT}'  # 监听内网端口8000
+timeout = 180
+graceful_timeout = 30
+keepalive = 5
+daemon = False
+bind = f'{BaseSetting.APP_HOST}:{BaseSetting.APP_PORT}'
 chdir = './'  # 工作目录
 worker_class = 'uvicorn.workers.UvicornWorker'  # 工作模式
 # workers = multiprocessing.cpu_count() + 1  # 并行工作进程数 核心数*2+1个
-workers = BaseSetting.GUNICORN_WORKER_NUMBER
+workers = 1
 threads = BaseSetting.GUNICORN_THREAD_NUMBER  # 指定每个工作者的线程数
 worker_connections = 2000  # 设置最大并发量
 loglevel = 'INFO'  # 错误日志的日志级别

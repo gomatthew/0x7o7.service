@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly cleanup for 0x7o7 demo documents
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

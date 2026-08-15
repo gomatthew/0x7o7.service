@@ -1,0 +1,9 @@
+/var/log/0x7o7/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

@@ -6,7 +6,7 @@ from fastapi import BackgroundTasks
 
 from src.server.service.auth_service import user_login
 from src.server.service.user_service import send_verify_code, user_register
-from src.server.utils import RateLimitException, ai_rate_limit
+from src.server.utils import RateLimitException, ai_rate_limit, get_client_ip
 
 
 class FakeRequest:
@@ -209,3 +209,13 @@ def test_ai_rate_limit_admin_bearer_bypass(monkeypatch):
     request = FakeRequest(authorization="Bearer admin-token")
 
     assert run(ai_rate_limit(request, token=None)) == "1"
+
+
+def test_client_ip_prefers_trusted_real_ip_over_spoofable_forwarded_chain():
+    request = FakeRequest(ip="172.18.0.2")
+    request.headers = {
+        "x-real-ip": "203.0.113.8",
+        "x-forwarded-for": "198.51.100.99, 203.0.113.8",
+    }
+
+    assert get_client_ip(request) == "203.0.113.8"

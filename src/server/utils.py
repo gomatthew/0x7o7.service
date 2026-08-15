@@ -56,12 +56,15 @@ class RateLimitException(Exception):
 
 
 def get_client_ip(request: Request):
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
+    # Nginx overwrites X-Real-IP with the trusted Cloudflare/client address.
+    # Do not prefer a caller-supplied X-Forwarded-For value: doing so lets a
+    # public client rotate the rate-limit key by spoofing that header.
     real_ip = request.headers.get("x-real-ip")
     if real_ip:
-        return real_ip
+        return real_ip.strip()
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[-1].strip()
     if request.client:
         return request.client.host
     return "unknown"

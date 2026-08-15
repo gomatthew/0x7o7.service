@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily timer for 0x7o7 Postgres backup
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

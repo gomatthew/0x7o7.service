@@ -4,4 +4,5 @@ from src.server.db.models.tenant_model import TenantModel
 from src.server.db.models.customer_model import CustomerModel
 from src.server.db.models.good_model import GoodModel
 from src.server.db.models.tenant_model import TenantModel
-from src.server.db.models.tenant_model import TenantModel
+from src.server.db.models.file_model import FileModel
+from src.server.db.models.demo_model import DemoEventModel, DemoJobModel, DemoSessionModel, LeadModel
