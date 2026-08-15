@@ -34,7 +34,7 @@ from src.server.db.repository import (
 from src.server.dto import ApiCommonResponseDTO
 from src.server.libs import send_mail
 from src.server.libs.redis_lib import async_rate_limit
-from src.server.utils import TokenChecker, get_client_ip
+from src.server.utils import TokenChecker, get_client_ip, is_admin_user
 
 setting = get_setting()
 
@@ -327,7 +327,9 @@ async def analyze_demo(request: Request, payload: AnalyzeRequest = Body(...), to
         return EventSourceResponse(sample_event_stream(result))
 
     client_ip = get_client_ip(request)
-    if token_checker:
+    if token_checker and is_admin_user(token_checker):
+        limited = False
+    elif token_checker:
         limited, _ = await async_rate_limit(f"demo:user:{token_checker}", setting.DEMO_USER_ANALYSIS_LIMIT,
                                              setting.DEMO_USER_ANALYSIS_TTL)
     else:

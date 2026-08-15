@@ -122,6 +122,26 @@ def test_preverified_sample_does_not_consume_live_rate_limit(monkeypatch):
     assert result.media_type == "text/event-stream"
 
 
+def test_admin_live_analysis_does_not_consume_rate_limit(monkeypatch):
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("admin live analysis should not consume the demo quota")
+
+    monkeypatch.setattr("src.server.service.demo_service.is_admin_user", lambda user_id: True)
+    monkeypatch.setattr("src.server.service.demo_service.async_rate_limit", fail_if_called)
+    monkeypatch.setattr("src.server.service.demo_service.add_demo_job", lambda values: "job_admin_test")
+    result = run(analyze_demo(
+        FakeRequest(),
+        AnalyzeRequest(
+            analysis_type="free_question",
+            question="What are the documented risks?",
+            use_sample=True,
+        ),
+        token_checker="5",
+    ))
+
+    assert result.media_type == "text/event-stream"
+
+
 def test_repository_records_remain_readable_after_commit():
     assert SessionLocal.kw["expire_on_commit"] is False
 
