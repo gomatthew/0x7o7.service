@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import argparse
@@ -7,8 +8,8 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from src.server.crm_db.base import CRMSessionLocal, create_crm_tables
-from src.server.crm_db.models import (
+from src.server.db.crm_base import CRMSessionLocal, create_crm_tables
+from src.server.db.models.crm_model import (
     CRMActivityModel,
     CRMCompanyModel,
     CRMContactModel,

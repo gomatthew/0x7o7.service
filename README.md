@@ -35,6 +35,20 @@ kb/{user_id}/{knowledge_base_id}
     └── uploaded-file.txt
 ```
 
+## CRM 数据迁移
+
+重新设计后的 CRM 使用独立的 `CRM_DATABASE_URL`。将旧本地 SQLite CRM 迁入 MySQL 前，先在主业务库中创建或启用 CRM 管理员，然后显式提供 MySQL URL 与该管理员 ID：
+
+```bash
+cd /Users/0x7o7/workspace/0x7o7.service.v1
+PYTHONPATH="$PWD" CRM_DATABASE_URL='mysql+pymysql://<user>:<password>@127.0.0.1:3306/crm_data?charset=utf8mb4' \
+  .venv/bin/python scripts/migrate_sales_crm_sqlite_to_mysql.py \
+  --source-db /path/to/sales.db \
+  --owner-id <admin-id>
+```
+
+迁移器是幂等的：公司按 owner/官网、联系人按 owner/公司/姓名、草稿按 owner/联系人/渠道/正文去重。市场研究不会迁入 `crm_data`；CRM 只保存 `market_opportunity_id` 等引用，事实、推断和原始来源始终由只读的 `market_source` 提供。
+
 数据库中 `knowledge_base.kb_dify_name` 当前保存本地 KB 相对路径，例如：
 
 ```text

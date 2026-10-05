@@ -1,506 +1,538 @@
-from __future__ import annotations
+# -*- coding: utf-8 -*-
+import uuid
+from datetime import datetime, timezone
 
-from collections import defaultdict
-from datetime import date, datetime, timezone
-from decimal import Decimal
-from typing import Any, TypeVar
-
-from fastapi import HTTPException
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
-
-from src.server.crm_db.models import (
-    CRMActivityModel,
-    CRMCompanyModel,
-    CRMContactModel,
-    CRMDealModel,
-    CRMFollowupTaskModel,
-    CRMOutreachDraftModel,
-)
+from src.configs import logger
+from src.server.db.crm_base import get_crm_owner_id
+from src.server.db.repository import crm_repository, market_repository
+from src.server.dto import ApiCommonResponseDTO
 from src.server.dto.crm_dto import (
     ActivityCreate,
+    ApprovalCreate,
+    ApprovalDecision,
     CompanyCreate,
     CompanyUpdate,
     ContactCreate,
     ContactUpdate,
     DealCreate,
     DealUpdate,
+    ExecutionTaskTransition,
     FollowupCreate,
     FollowupUpdate,
+    MarketAgencyDto,
+    MarketOpportunityDto,
+    MarketSignalDto,
     OutreachDraftCreate,
 )
 from src.server.utils import TokenChecker, is_admin_user
 
 
-ModelT = TypeVar("ModelT")
-PIPELINE_STAGES = ("lead", "qualified", "proposal", "negotiation", "won", "lost")
+APPROVAL_EXECUTION = {
+    "research_focus": ("research_agent", "research"),
+    "create_lead": ("crm_agent", "lead_qualification"),
+    "demo": ("code_agent", "demo_design"),
+    "follow_up": ("user", "manual_external"),
+    "outreach": ("user", "manual_external"),
+    "platform_application": ("user", "manual_external"),
+}
+APPROVAL_TRANSITIONS = {
+    "draft": {"pending_approval", "cancelled"},
+    "pending_approval": {"approved_not_executed", "returned_for_revision", "rejected", "cancelled"},
+    "returned_for_revision": {"pending_approval", "cancelled"},
+    "approved_not_executed": {"executed_confirmed", "cancelled"},
+    "executed_confirmed": set(),
+    "rejected": set(),
+    "cancelled": set(),
+}
+TASK_TRANSITIONS = {
+    "queued": {"in_progress", "cancelled"},
+    "in_progress": {"completed", "cancelled"},
+    "completed": set(),
+    "cancelled": set(),
+}
 
 
-def require_crm_admin(token_checker: TokenChecker) -> str:
+def _utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _response(status=200, message="success", data=None):
+    return ApiCommonResponseDTO(status=status, message=message, data=data if data is not None else {}).model_dict()
+
+
+def _authorize(token_checker):
     if not token_checker:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        return None, _response(401, "auth.required")
     if not is_admin_user(token_checker):
-        raise HTTPException(status_code=403, detail="CRM administrator access required")
-    return str(token_checker)
+        return None, _response(403, "auth.adminRequired")
+    return str(get_crm_owner_id()), None
 
 
-def _iso(value: date | datetime | None) -> str | None:
-    return value.isoformat() if value is not None else None
+def _failure(error, operation):
+    logger.exception("CRM %s failed: %s", operation, error)
+    return _response(500, "crm.unavailable")
 
 
-def _money(value: Decimal | int | float | None) -> float:
-    return float(value or 0)
+def _dump_rows(model, rows):
+    return [model.model_validate(row).model_dump(mode="json") for row in rows]
 
 
-def _owned_record(session: Session, model: type[ModelT], owner_user_id: str, record_id: int) -> ModelT:
-    record = session.scalar(
-        select(model).where(model.id == record_id, model.owner_user_id == owner_user_id)
-    )
-    if record is None:
-        raise HTTPException(status_code=404, detail=f"{model.__name__} not found")
-    return record
+def get_crm_health(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    del owner_user_id
+    checks = {"crm_data": "ok", "market_source": "ok"}
+    try:
+        crm_repository.check_crm_database()
+    except Exception as error:
+        logger.exception("CRM database health check failed: %s", error)
+        checks["crm_data"] = "unavailable"
+    try:
+        market_repository.check_market_database()
+    except Exception as error:
+        logger.exception("Market database health check failed: %s", error)
+        checks["market_source"] = "unavailable"
+    if "unavailable" in checks.values():
+        return _response(500, "crm.healthFailed", {"checks": checks})
+    return _response(data={"checks": checks})
 
 
-def _apply_update(record: Any, values: dict[str, Any]) -> None:
-    for field, value in values.items():
-        setattr(record, field, value)
+def get_dashboard(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data={
+            "market_metrics": market_repository.get_market_dashboard_from_db(),
+            "crm_metrics": crm_repository.get_crm_dashboard_from_db(owner_user_id),
+            "opportunities": _dump_rows(MarketOpportunityDto, market_repository.list_market_opportunities_from_db()),
+            "companies": crm_repository.list_companies_from_db(owner_user_id),
+            "approvals": crm_repository.list_approvals_from_db(owner_user_id),
+            "tasks": crm_repository.list_execution_tasks_from_db(owner_user_id),
+            "activities": crm_repository.list_activities_from_db(owner_user_id, 50),
+        })
+    except Exception as error:
+        return _failure(error, "dashboard")
 
 
-def company_dict(record: CRMCompanyModel) -> dict[str, Any]:
-    return {
-        "id": record.id,
-        "name": record.name,
-        "website": record.website,
-        "country": record.country,
-        "industry": record.industry,
-        "employee_band": record.employee_band,
-        "fit_score": record.fit_score,
-        "status": record.status,
-        "source_url": record.source_url,
-        "buying_signal": record.buying_signal,
-        "value_hypothesis": record.value_hypothesis,
-        "notes": record.notes,
-        "created_at": _iso(record.created_at),
-        "updated_at": _iso(record.updated_at),
-    }
+def get_market_dashboard(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    del owner_user_id
+    try:
+        return _response(data=market_repository.get_market_dashboard_from_db())
+    except Exception as error:
+        return _failure(error, "market dashboard")
 
 
-def contact_dict(record: CRMContactModel, company_name: str | None = None) -> dict[str, Any]:
-    return {
-        "id": record.id,
-        "company_id": record.company_id,
-        "company_name": company_name,
-        "full_name": record.full_name,
-        "role": record.role,
-        "email": record.email,
-        "phone": record.phone,
-        "linkedin_url": record.linkedin_url,
-        "platform": record.platform,
-        "platform_profile_url": record.platform_profile_url,
-        "preferred_channel": record.preferred_channel,
-        "verification_status": record.verification_status,
-        "source_url": record.source_url,
-        "notes": record.notes,
-        "created_at": _iso(record.created_at),
-        "updated_at": _iso(record.updated_at),
-    }
+def get_market_opportunities(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    del owner_user_id
+    try:
+        rows = market_repository.list_market_opportunities_from_db()
+        return _response(data={"items": _dump_rows(MarketOpportunityDto, rows), "total": len(rows)})
+    except Exception as error:
+        return _failure(error, "list market opportunities")
 
 
-def deal_dict(
-    record: CRMDealModel,
-    company_name: str | None = None,
-    contact_name: str | None = None,
-) -> dict[str, Any]:
-    return {
-        "id": record.id,
-        "company_id": record.company_id,
-        "company_name": company_name,
-        "contact_id": record.contact_id,
-        "contact_name": contact_name,
-        "title": record.title,
-        "stage": record.stage,
-        "amount": _money(record.amount),
-        "currency": record.currency,
-        "probability": record.probability,
-        "expected_close_date": _iso(record.expected_close_date),
-        "owner_name": record.owner_name,
-        "next_step": record.next_step,
-        "notes": record.notes,
-        "created_at": _iso(record.created_at),
-        "updated_at": _iso(record.updated_at),
-    }
+def get_market_opportunity(opportunity_id: str, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        row = market_repository.get_market_opportunity_from_db(opportunity_id)
+        if not row:
+            return _response(404, "crm.marketOpportunityNotFound")
+        data = MarketOpportunityDto.model_validate(row).model_dump(mode="json")
+        data["crm"] = {
+            "deals": [item for item in crm_repository.list_deals_from_db(owner_user_id) if item.get("market_opportunity_id") == opportunity_id],
+            "approvals": [item for item in crm_repository.list_approvals_from_db(owner_user_id) if item.get("market_opportunity_id") == opportunity_id],
+        }
+        return _response(data=data)
+    except Exception as error:
+        return _failure(error, "get market opportunity")
 
 
-def activity_dict(
-    record: CRMActivityModel,
-    company_name: str | None = None,
-    contact_name: str | None = None,
-    deal_title: str | None = None,
-) -> dict[str, Any]:
-    return {
-        "id": record.id,
-        "company_id": record.company_id,
-        "company_name": company_name,
-        "contact_id": record.contact_id,
-        "contact_name": contact_name,
-        "deal_id": record.deal_id,
-        "deal_title": deal_title,
-        "activity_type": record.activity_type,
-        "direction": record.direction,
-        "summary": record.summary,
-        "outcome": record.outcome,
-        "happened_at": _iso(record.happened_at),
-        "next_followup_at": _iso(record.next_followup_at),
-    }
+def get_market_signals(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    del owner_user_id
+    try:
+        rows = market_repository.list_market_signals_from_db()
+        return _response(data={"items": _dump_rows(MarketSignalDto, rows), "total": len(rows)})
+    except Exception as error:
+        return _failure(error, "list market signals")
 
 
-def draft_dict(
-    record: CRMOutreachDraftModel,
-    contact_name: str | None = None,
-    company_name: str | None = None,
-) -> dict[str, Any]:
-    return {
-        "id": record.id,
-        "contact_id": record.contact_id,
-        "contact_name": contact_name,
-        "company_name": company_name,
-        "deal_id": record.deal_id,
-        "channel": record.channel,
-        "subject": record.subject,
-        "body": record.body,
-        "status": record.status,
-        "approval_note": record.approval_note,
-        "approved_by": record.approved_by,
-        "approved_at": _iso(record.approved_at),
-        "sent_at": _iso(record.sent_at),
-        "created_at": _iso(record.created_at),
-        "updated_at": _iso(record.updated_at),
-    }
+def get_market_signal(signal_id: str, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    del owner_user_id
+    try:
+        row = market_repository.get_market_signal_from_db(signal_id)
+        if not row:
+            return _response(404, "crm.marketSignalNotFound")
+        return _response(data=MarketSignalDto.model_validate(row).model_dump(mode="json"))
+    except Exception as error:
+        return _failure(error, "get market signal")
 
 
-def followup_dict(
-    record: CRMFollowupTaskModel,
-    contact_name: str | None = None,
-    company_name: str | None = None,
-    deal_title: str | None = None,
-) -> dict[str, Any]:
-    return {
-        "id": record.id,
-        "contact_id": record.contact_id,
-        "contact_name": contact_name,
-        "company_name": company_name,
-        "deal_id": record.deal_id,
-        "deal_title": deal_title,
-        "due_at": _iso(record.due_at),
-        "task_type": record.task_type,
-        "description": record.description,
-        "status": record.status,
-        "completed_at": _iso(record.completed_at),
-        "created_at": _iso(record.created_at),
-    }
+def get_market_agencies(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    del owner_user_id
+    try:
+        rows = market_repository.list_market_agencies_from_db()
+        return _response(data={"items": _dump_rows(MarketAgencyDto, rows), "total": len(rows)})
+    except Exception as error:
+        return _failure(error, "list market agencies")
 
 
-def dashboard(session: Session, owner_user_id: str) -> dict[str, Any]:
-    company_count = session.scalar(
-        select(func.count()).select_from(CRMCompanyModel).where(CRMCompanyModel.owner_user_id == owner_user_id)
-    ) or 0
-    contact_count = session.scalar(
-        select(func.count()).select_from(CRMContactModel).where(CRMContactModel.owner_user_id == owner_user_id)
-    ) or 0
-    pending_approvals = session.scalar(
-        select(func.count()).select_from(CRMOutreachDraftModel).where(
-            CRMOutreachDraftModel.owner_user_id == owner_user_id,
-            CRMOutreachDraftModel.status == "pending_approval",
+def get_market_research_runs(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    del owner_user_id
+    try:
+        return _response(data={"items": market_repository.list_market_research_runs_from_db()})
+    except Exception as error:
+        return _failure(error, "list market research runs")
+
+
+def get_market_publication(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    del owner_user_id
+    try:
+        return _response(data=market_repository.get_market_publication_from_db())
+    except Exception as error:
+        return _failure(error, "get market publication")
+
+
+def get_companies(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data={"items": crm_repository.list_companies_from_db(owner_user_id)})
+    except Exception as error:
+        return _failure(error, "list companies")
+
+
+def get_company(company_id: int, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        row = crm_repository.get_company_from_db(owner_user_id, company_id)
+        return _response(data=row) if row else _response(404, "crm.companyNotFound")
+    except Exception as error:
+        return _failure(error, "get company")
+
+
+def create_company(payload: CompanyCreate, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data=crm_repository.create_company_in_db(owner_user_id, payload.model_dump()))
+    except Exception as error:
+        return _failure(error, "create company")
+
+
+def update_company(company_id: int, payload: CompanyUpdate, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        row = crm_repository.update_company_in_db(owner_user_id, company_id, payload.model_dump(exclude_unset=True))
+        return _response(data=row) if row else _response(404, "crm.companyNotFound")
+    except Exception as error:
+        return _failure(error, "update company")
+
+
+def get_contacts(token_checker: TokenChecker, company_id: int | None = None):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data={"items": crm_repository.list_contacts_from_db(owner_user_id, company_id)})
+    except Exception as error:
+        return _failure(error, "list contacts")
+
+
+def create_contact(payload: ContactCreate, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        row = crm_repository.create_contact_in_db(owner_user_id, payload.model_dump())
+        return _response(data=row) if row else _response(400, "crm.companyNotFound")
+    except Exception as error:
+        return _failure(error, "create contact")
+
+
+def update_contact(contact_id: int, payload: ContactUpdate, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        row = crm_repository.update_contact_in_db(owner_user_id, contact_id, payload.model_dump(exclude_unset=True))
+        return _response(data=row) if row else _response(404, "crm.contactNotFound")
+    except Exception as error:
+        return _failure(error, "update contact")
+
+
+def get_deals(token_checker: TokenChecker, company_id: int | None = None):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data={"items": crm_repository.list_deals_from_db(owner_user_id, company_id)})
+    except Exception as error:
+        return _failure(error, "list deals")
+
+
+def create_deal(payload: DealCreate, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        row = crm_repository.create_deal_in_db(owner_user_id, payload.model_dump())
+        return _response(data=row) if row else _response(400, "crm.invalidCompanyOrContact")
+    except Exception as error:
+        return _failure(error, "create deal")
+
+
+def update_deal(deal_id: int, payload: DealUpdate, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        row = crm_repository.update_deal_in_db(owner_user_id, deal_id, payload.model_dump(exclude_unset=True))
+        return _response(data=row) if row else _response(404, "crm.dealNotFound")
+    except Exception as error:
+        return _failure(error, "update deal")
+
+
+def get_activities(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data={"items": crm_repository.list_activities_from_db(owner_user_id)})
+    except Exception as error:
+        return _failure(error, "list activities")
+
+
+def create_activity(payload: ActivityCreate, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data=crm_repository.create_activity_in_db(owner_user_id, payload.model_dump()))
+    except Exception as error:
+        return _failure(error, "create activity")
+
+
+def get_outreach_drafts(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data={"items": crm_repository.list_outreach_drafts_from_db(owner_user_id)})
+    except Exception as error:
+        return _failure(error, "list outreach drafts")
+
+
+def create_outreach_draft(payload: OutreachDraftCreate, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        row = crm_repository.create_outreach_draft_in_db(owner_user_id, payload.model_dump())
+        return _response(data=row) if row else _response(400, "crm.contactNotFound")
+    except Exception as error:
+        return _failure(error, "create outreach draft")
+
+
+def get_followups(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data={"items": crm_repository.list_followups_from_db(owner_user_id)})
+    except Exception as error:
+        return _failure(error, "list followups")
+
+
+def create_followup(payload: FollowupCreate, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data=crm_repository.create_followup_in_db(owner_user_id, payload.model_dump()))
+    except Exception as error:
+        return _failure(error, "create followup")
+
+
+def update_followup(followup_id: int, payload: FollowupUpdate, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        row = crm_repository.update_followup_in_db(owner_user_id, followup_id, payload.model_dump(exclude_unset=True))
+        return _response(data=row) if row else _response(404, "crm.followupNotFound")
+    except Exception as error:
+        return _failure(error, "update followup")
+
+
+def _external_gate(owner_user_id, payload):
+    if payload.request_type not in {"outreach", "platform_application"}:
+        return None
+    if not payload.company_id or not payload.contact_id:
+        return "crm.externalCompanyContactRequired"
+    company = crm_repository.get_company_from_db(owner_user_id, payload.company_id)
+    contact = crm_repository.get_contact_from_db(owner_user_id, payload.contact_id)
+    if not company or not contact or contact.get("company_id") != payload.company_id:
+        return "crm.invalidCompanyOrContact"
+    if company.get("status") != "qualified" or not company.get("value_hypothesis") or not company.get("source_url"):
+        return "crm.externalCompanyNotQualified"
+    has_public_channel = bool(contact.get("email") or contact.get("platform_profile_url") or contact.get("linkedin_url"))
+    if contact.get("verification_status") != "verified" or not contact.get("source_url") or not has_public_channel:
+        return "crm.externalContactNotVerified"
+    if not payload.action_pack.strip():
+        return "crm.externalActionPackRequired"
+    return None
+
+
+def get_approvals(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data={"items": crm_repository.list_approvals_from_db(owner_user_id)})
+    except Exception as error:
+        return _failure(error, "list approvals")
+
+
+def create_approval(payload: ApprovalCreate, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        gate_error = _external_gate(owner_user_id, payload)
+        if gate_error:
+            return _response(400, gate_error)
+        execution_owner, execution_kind = APPROVAL_EXECUTION[payload.request_type]
+        values = payload.model_dump(exclude={"evidence", "constraints"})
+        values.update({
+            "id": f"APR-{uuid.uuid4().hex[:12].upper()}",
+            "evidence_json": payload.evidence,
+            "constraints_text": payload.constraints,
+            "execution_owner": execution_owner,
+            "execution_kind": execution_kind,
+        })
+        return _response(data=crm_repository.create_approval_in_db(owner_user_id, values))
+    except Exception as error:
+        return _failure(error, "create approval")
+
+
+def decide_approval(approval_id: str, payload: ApprovalDecision, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        current = crm_repository.get_approval_from_db(owner_user_id, approval_id)
+        if not current:
+            return _response(404, "crm.approvalNotFound")
+        if payload.status not in APPROVAL_TRANSITIONS.get(current["status"], set()):
+            return _response(400, "crm.invalidApprovalTransition", {
+                "current_status": current["status"], "requested_status": payload.status,
+            })
+        is_external = current["execution_kind"] == "manual_external"
+        if payload.status == "executed_confirmed":
+            if not is_external:
+                return _response(400, "crm.internalExecutionUsesTask")
+            if not payload.output_note or not payload.output_refs:
+                return _response(400, "crm.externalResultRequired")
+        now = _utcnow()
+        values = {
+            "status": payload.status,
+            "decision_note": payload.note,
+            "output_note": payload.output_note,
+            "output_refs": payload.output_refs or None,
+        }
+        if payload.status in {"approved_not_executed", "returned_for_revision", "rejected", "cancelled"}:
+            values["decided_at"] = now
+        if payload.status == "executed_confirmed":
+            values["started_at"] = current.get("started_at") or now
+            values["completed_at"] = now
+        task_values = None
+        if payload.status == "approved_not_executed" and not is_external:
+            task_values = {
+                "task_id": f"TASK-{uuid.uuid4().hex[:12].upper()}",
+                "approval_id": approval_id,
+                "execution_owner": current["execution_owner"],
+                "execution_kind": current["execution_kind"],
+                "task_status": "queued",
+                "title": current["title"],
+                "action_pack": current["action_pack"],
+            }
+        result = crm_repository.transition_approval_in_db(
+            owner_user_id, approval_id, current["status"], values, task_values
         )
-    ) or 0
-    open_followups = session.scalar(
-        select(func.count()).select_from(CRMFollowupTaskModel).where(
-            CRMFollowupTaskModel.owner_user_id == owner_user_id,
-            CRMFollowupTaskModel.status == "open",
+        return _response(data=result) if result else _response(409, "crm.approvalChanged")
+    except Exception as error:
+        return _failure(error, "decide approval")
+
+
+def get_execution_tasks(token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        return _response(data={"items": crm_repository.list_execution_tasks_from_db(owner_user_id)})
+    except Exception as error:
+        return _failure(error, "list execution tasks")
+
+
+def transition_execution_task(task_id: str, payload: ExecutionTaskTransition, token_checker: TokenChecker):
+    owner_user_id, denied = _authorize(token_checker)
+    if denied:
+        return denied
+    try:
+        current = crm_repository.get_execution_task_from_db(owner_user_id, task_id)
+        if not current:
+            return _response(404, "crm.taskNotFound")
+        if payload.status not in TASK_TRANSITIONS.get(current["task_status"], set()):
+            return _response(400, "crm.invalidTaskTransition", {
+                "current_status": current["task_status"], "requested_status": payload.status,
+            })
+        if payload.status == "completed" and (not payload.output_note or not payload.output_refs):
+            return _response(400, "crm.taskResultRequired")
+        now = _utcnow()
+        values = {
+            "task_status": payload.status,
+            "output_note": payload.output_note,
+            "output_refs": payload.output_refs or None,
+        }
+        if payload.status == "in_progress":
+            values["started_at"] = now
+        if payload.status == "completed":
+            values["completed_at"] = now
+            values["started_at"] = current.get("started_at") or now
+        result = crm_repository.transition_execution_task_in_db(
+            owner_user_id, task_id, current["task_status"], values
         )
-    ) or 0
-    deals = list(session.scalars(select(CRMDealModel).where(CRMDealModel.owner_user_id == owner_user_id)))
-    pipeline = {stage: {"count": 0, "amount": 0.0} for stage in PIPELINE_STAGES}
-    monthly: dict[str, float] = defaultdict(float)
-    for deal in deals:
-        stage = deal.stage if deal.stage in pipeline else "lead"
-        pipeline[stage]["count"] += 1
-        pipeline[stage]["amount"] += _money(deal.amount)
-        month_source = deal.expected_close_date or deal.created_at.date()
-        monthly[month_source.strftime("%Y-%m")] += _money(deal.amount)
-
-    active_deals = [deal for deal in deals if deal.stage not in {"won", "lost"}]
-    weighted_pipeline = sum(_money(deal.amount) * deal.probability / 100 for deal in active_deals)
-    won_revenue = sum(_money(deal.amount) for deal in deals if deal.stage == "won")
-    top_rows = session.execute(
-        select(CRMDealModel, CRMCompanyModel.name, CRMContactModel.full_name)
-        .join(CRMCompanyModel, CRMDealModel.company_id == CRMCompanyModel.id)
-        .outerjoin(CRMContactModel, CRMDealModel.contact_id == CRMContactModel.id)
-        .where(CRMDealModel.owner_user_id == owner_user_id, CRMDealModel.stage.notin_(("won", "lost")))
-        .order_by(CRMDealModel.amount.desc())
-        .limit(6)
-    ).all()
-    activity_rows = session.execute(
-        select(CRMActivityModel, CRMCompanyModel.name, CRMContactModel.full_name, CRMDealModel.title)
-        .outerjoin(CRMCompanyModel, CRMActivityModel.company_id == CRMCompanyModel.id)
-        .outerjoin(CRMContactModel, CRMActivityModel.contact_id == CRMContactModel.id)
-        .outerjoin(CRMDealModel, CRMActivityModel.deal_id == CRMDealModel.id)
-        .where(CRMActivityModel.owner_user_id == owner_user_id)
-        .order_by(CRMActivityModel.happened_at.desc())
-        .limit(8)
-    ).all()
-    return {
-        "metrics": {
-            "companies": company_count,
-            "contacts": contact_count,
-            "active_deals": len(active_deals),
-            "pipeline_amount": sum(_money(deal.amount) for deal in active_deals),
-            "weighted_pipeline": weighted_pipeline,
-            "won_revenue": won_revenue,
-            "pending_approvals": pending_approvals,
-            "open_followups": open_followups,
-        },
-        "pipeline": [{"stage": stage, **values} for stage, values in pipeline.items()],
-        "monthly_sales": [{"month": month, "amount": monthly[month]} for month in sorted(monthly)[-8:]],
-        "top_deals": [deal_dict(deal, company_name, contact_name) for deal, company_name, contact_name in top_rows],
-        "recent_activities": [
-            activity_dict(activity, company_name, contact_name, deal_title)
-            for activity, company_name, contact_name, deal_title in activity_rows
-        ],
-    }
-
-
-def list_companies(session: Session, owner_user_id: str) -> list[dict[str, Any]]:
-    records = session.scalars(
-        select(CRMCompanyModel)
-        .where(CRMCompanyModel.owner_user_id == owner_user_id)
-        .order_by(CRMCompanyModel.fit_score.desc(), CRMCompanyModel.id.desc())
-    )
-    return [company_dict(record) for record in records]
-
-
-def create_company(session: Session, owner_user_id: str, payload: CompanyCreate) -> dict[str, Any]:
-    record = CRMCompanyModel(owner_user_id=owner_user_id, **payload.model_dump())
-    session.add(record)
-    session.flush()
-    return company_dict(record)
-
-
-def update_company(
-    session: Session, owner_user_id: str, company_id: int, payload: CompanyUpdate
-) -> dict[str, Any]:
-    record = _owned_record(session, CRMCompanyModel, owner_user_id, company_id)
-    _apply_update(record, payload.model_dump(exclude_unset=True))
-    session.flush()
-    return company_dict(record)
-
-
-def list_contacts(session: Session, owner_user_id: str) -> list[dict[str, Any]]:
-    rows = session.execute(
-        select(CRMContactModel, CRMCompanyModel.name)
-        .join(CRMCompanyModel, CRMContactModel.company_id == CRMCompanyModel.id)
-        .where(CRMContactModel.owner_user_id == owner_user_id)
-        .order_by(CRMContactModel.id.desc())
-    ).all()
-    return [contact_dict(contact, company_name) for contact, company_name in rows]
-
-
-def create_contact(session: Session, owner_user_id: str, payload: ContactCreate) -> dict[str, Any]:
-    company = _owned_record(session, CRMCompanyModel, owner_user_id, payload.company_id)
-    record = CRMContactModel(owner_user_id=owner_user_id, **payload.model_dump())
-    session.add(record)
-    session.flush()
-    return contact_dict(record, company.name)
-
-
-def update_contact(
-    session: Session, owner_user_id: str, contact_id: int, payload: ContactUpdate
-) -> dict[str, Any]:
-    record = _owned_record(session, CRMContactModel, owner_user_id, contact_id)
-    values = payload.model_dump(exclude_unset=True)
-    if "company_id" in values:
-        _owned_record(session, CRMCompanyModel, owner_user_id, values["company_id"])
-    _apply_update(record, values)
-    session.flush()
-    company = _owned_record(session, CRMCompanyModel, owner_user_id, record.company_id)
-    return contact_dict(record, company.name)
-
-
-def list_deals(session: Session, owner_user_id: str) -> list[dict[str, Any]]:
-    rows = session.execute(
-        select(CRMDealModel, CRMCompanyModel.name, CRMContactModel.full_name)
-        .join(CRMCompanyModel, CRMDealModel.company_id == CRMCompanyModel.id)
-        .outerjoin(CRMContactModel, CRMDealModel.contact_id == CRMContactModel.id)
-        .where(CRMDealModel.owner_user_id == owner_user_id)
-        .order_by(CRMDealModel.updated_at.desc(), CRMDealModel.id.desc())
-    ).all()
-    return [deal_dict(deal, company_name, contact_name) for deal, company_name, contact_name in rows]
-
-
-def create_deal(session: Session, owner_user_id: str, payload: DealCreate) -> dict[str, Any]:
-    company = _owned_record(session, CRMCompanyModel, owner_user_id, payload.company_id)
-    contact_name = None
-    if payload.contact_id is not None:
-        contact = _owned_record(session, CRMContactModel, owner_user_id, payload.contact_id)
-        if contact.company_id != payload.company_id:
-            raise HTTPException(status_code=400, detail="Contact does not belong to company")
-        contact_name = contact.full_name
-    record = CRMDealModel(owner_user_id=owner_user_id, **payload.model_dump())
-    session.add(record)
-    session.flush()
-    return deal_dict(record, company.name, contact_name)
-
-
-def update_deal(session: Session, owner_user_id: str, deal_id: int, payload: DealUpdate) -> dict[str, Any]:
-    record = _owned_record(session, CRMDealModel, owner_user_id, deal_id)
-    values = payload.model_dump(exclude_unset=True)
-    if "contact_id" in values and values["contact_id"] is not None:
-        contact = _owned_record(session, CRMContactModel, owner_user_id, values["contact_id"])
-        if contact.company_id != record.company_id:
-            raise HTTPException(status_code=400, detail="Contact does not belong to company")
-    _apply_update(record, values)
-    session.flush()
-    company = _owned_record(session, CRMCompanyModel, owner_user_id, record.company_id)
-    contact = (
-        _owned_record(session, CRMContactModel, owner_user_id, record.contact_id)
-        if record.contact_id is not None
-        else None
-    )
-    return deal_dict(record, company.name, contact.full_name if contact else None)
-
-
-def list_activities(session: Session, owner_user_id: str) -> list[dict[str, Any]]:
-    rows = session.execute(
-        select(CRMActivityModel, CRMCompanyModel.name, CRMContactModel.full_name, CRMDealModel.title)
-        .outerjoin(CRMCompanyModel, CRMActivityModel.company_id == CRMCompanyModel.id)
-        .outerjoin(CRMContactModel, CRMActivityModel.contact_id == CRMContactModel.id)
-        .outerjoin(CRMDealModel, CRMActivityModel.deal_id == CRMDealModel.id)
-        .where(CRMActivityModel.owner_user_id == owner_user_id)
-        .order_by(CRMActivityModel.happened_at.desc(), CRMActivityModel.id.desc())
-    ).all()
-    return [
-        activity_dict(activity, company_name, contact_name, deal_title)
-        for activity, company_name, contact_name, deal_title in rows
-    ]
-
-
-def create_activity(session: Session, owner_user_id: str, payload: ActivityCreate) -> dict[str, Any]:
-    values = payload.model_dump()
-    if values["company_id"] is not None:
-        _owned_record(session, CRMCompanyModel, owner_user_id, values["company_id"])
-    if values["contact_id"] is not None:
-        _owned_record(session, CRMContactModel, owner_user_id, values["contact_id"])
-    if values["deal_id"] is not None:
-        _owned_record(session, CRMDealModel, owner_user_id, values["deal_id"])
-    if values["happened_at"] is None:
-        values["happened_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
-    record = CRMActivityModel(owner_user_id=owner_user_id, **values)
-    session.add(record)
-    if payload.next_followup_at is not None:
-        session.add(
-            CRMFollowupTaskModel(
-                owner_user_id=owner_user_id,
-                contact_id=payload.contact_id,
-                deal_id=payload.deal_id,
-                due_at=payload.next_followup_at,
-                task_type="follow_up",
-                description=f"Follow up: {payload.summary[:200]}",
-            )
-        )
-    session.flush()
-    return activity_dict(record)
-
-
-def list_drafts(session: Session, owner_user_id: str) -> list[dict[str, Any]]:
-    rows = session.execute(
-        select(CRMOutreachDraftModel, CRMContactModel.full_name, CRMCompanyModel.name)
-        .join(CRMContactModel, CRMOutreachDraftModel.contact_id == CRMContactModel.id)
-        .join(CRMCompanyModel, CRMContactModel.company_id == CRMCompanyModel.id)
-        .where(CRMOutreachDraftModel.owner_user_id == owner_user_id)
-        .order_by(CRMOutreachDraftModel.updated_at.desc(), CRMOutreachDraftModel.id.desc())
-    ).all()
-    return [draft_dict(draft, contact_name, company_name) for draft, contact_name, company_name in rows]
-
-
-def create_draft(session: Session, owner_user_id: str, payload: OutreachDraftCreate) -> dict[str, Any]:
-    contact = _owned_record(session, CRMContactModel, owner_user_id, payload.contact_id)
-    if payload.deal_id is not None:
-        _owned_record(session, CRMDealModel, owner_user_id, payload.deal_id)
-    company = _owned_record(session, CRMCompanyModel, owner_user_id, contact.company_id)
-    record = CRMOutreachDraftModel(owner_user_id=owner_user_id, **payload.model_dump())
-    session.add(record)
-    session.flush()
-    return draft_dict(record, contact.full_name, company.name)
-
-
-def transition_draft(
-    session: Session,
-    owner_user_id: str,
-    draft_id: int,
-    action: str,
-    note: str | None,
-) -> dict[str, Any]:
-    record = _owned_record(session, CRMOutreachDraftModel, owner_user_id, draft_id)
-    transitions = {
-        "request-approval": ({"draft", "rejected"}, "pending_approval"),
-        "approve": ({"pending_approval"}, "approved"),
-        "reject": ({"pending_approval", "approved"}, "rejected"),
-        "cancel": ({"draft", "pending_approval", "approved", "rejected"}, "cancelled"),
-    }
-    if action not in transitions:
-        raise HTTPException(status_code=400, detail="Unsupported draft action")
-    allowed, target = transitions[action]
-    if record.status not in allowed:
-        raise HTTPException(status_code=409, detail=f"Cannot {action} a {record.status} draft")
-    record.status = target
-    record.approval_note = note
-    if action == "approve":
-        record.approved_by = owner_user_id
-        record.approved_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    else:
-        record.approved_by = None
-        record.approved_at = None
-    session.flush()
-    contact = _owned_record(session, CRMContactModel, owner_user_id, record.contact_id)
-    company = _owned_record(session, CRMCompanyModel, owner_user_id, contact.company_id)
-    return draft_dict(record, contact.full_name, company.name)
-
-
-def list_followups(session: Session, owner_user_id: str) -> list[dict[str, Any]]:
-    rows = session.execute(
-        select(CRMFollowupTaskModel, CRMContactModel.full_name, CRMCompanyModel.name, CRMDealModel.title)
-        .outerjoin(CRMContactModel, CRMFollowupTaskModel.contact_id == CRMContactModel.id)
-        .outerjoin(CRMCompanyModel, CRMContactModel.company_id == CRMCompanyModel.id)
-        .outerjoin(CRMDealModel, CRMFollowupTaskModel.deal_id == CRMDealModel.id)
-        .where(CRMFollowupTaskModel.owner_user_id == owner_user_id)
-        .order_by(CRMFollowupTaskModel.status.asc(), CRMFollowupTaskModel.due_at.asc())
-    ).all()
-    return [
-        followup_dict(task, contact_name, company_name, deal_title)
-        for task, contact_name, company_name, deal_title in rows
-    ]
-
-
-def create_followup(session: Session, owner_user_id: str, payload: FollowupCreate) -> dict[str, Any]:
-    if payload.contact_id is not None:
-        _owned_record(session, CRMContactModel, owner_user_id, payload.contact_id)
-    if payload.deal_id is not None:
-        _owned_record(session, CRMDealModel, owner_user_id, payload.deal_id)
-    record = CRMFollowupTaskModel(owner_user_id=owner_user_id, **payload.model_dump())
-    session.add(record)
-    session.flush()
-    return followup_dict(record)
-
-
-def update_followup(
-    session: Session, owner_user_id: str, task_id: int, payload: FollowupUpdate
-) -> dict[str, Any]:
-    record = _owned_record(session, CRMFollowupTaskModel, owner_user_id, task_id)
-    values = payload.model_dump(exclude_unset=True)
-    if values.get("status") == "done":
-        values["completed_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
-    elif "status" in values and values["status"] != "done":
-        values["completed_at"] = None
-    _apply_update(record, values)
-    session.flush()
-    return followup_dict(record)
+        return _response(data=result) if result else _response(409, "crm.taskChanged")
+    except Exception as error:
+        return _failure(error, "transition execution task")

@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import time
+import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -15,7 +16,7 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from src.configs import get_setting, logger
-from src.server.ai.dify_workflow_service import stream_document_analysis
+from src.server.ai.document_workflow_service import stream_document_analysis
 from src.server.ai.rag.context_service import context_builder
 from src.server.ai.rag.document_chunker_service import document_chunker
 from src.server.ai.rag.document_loader_service import document_loader_service
@@ -52,6 +53,9 @@ R2. The system must produce an executive summary, requirements with acceptance c
 R3. Files must be private to the uploader and deleted after 24 hours.
 R4. Unsupported or suspicious files must be rejected before indexing.
 R5. The public sample must work without account creation.
+
+## Data retention appendix
+For a controlled audit, the agency may retain a sealed delivery archive for 30 days.
 
 ## Acceptance criteria
 AC1. A user can complete the sample flow in under three minutes.
@@ -96,6 +100,8 @@ SAMPLE_SOURCES = [
      "excerpt": "Prompt injection, provider downtime, and phase-two scope are open risks or decisions."},
     {"source_id": "northstar-timeline", "filename": "northstar-ai-pilot.md", "page": None, "chunk_index": 3,
      "excerpt": "Day 1 confirms scope; days 2-7 cover implementation, evaluation, fixes, and handoff."},
+    {"source_id": "northstar-retention-appendix", "filename": "northstar-ai-pilot.md", "page": None, "chunk_index": 4,
+     "excerpt": "For a controlled audit, the agency may retain a sealed delivery archive for 30 days."},
 ]
 
 SAMPLE_ANALYSES = {
@@ -135,11 +141,13 @@ SAMPLE_ANALYSES = {
 }
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
-ANALYSIS_TYPES = {"executive_summary", "requirements", "risks_actions", "free_question"}
+ANALYSIS_TYPES = {"executive_summary", "requirements", "risks_actions", "free_question", "delivery_handoff"}
 
 
 class AnalyzeRequest(BaseModel):
-    analysis_type: Literal["executive_summary", "requirements", "risks_actions", "free_question"]
+    # Legacy analysis types remain accepted for existing callers.  The flagship
+    # workbench uses delivery_handoff, whose result is a stable JSON contract.
+    analysis_type: Literal["executive_summary", "requirements", "risks_actions", "free_question", "delivery_handoff"]
     session_id: Optional[str] = None
     question: Optional[str] = Field(None, max_length=1200)
     use_sample: bool = True
@@ -174,7 +182,126 @@ def sample_payload():
         ],
         "results": SAMPLE_ANALYSES,
         "notice": "These are pre-verified sample results. Free questions use the live model and are labelled separately.",
+        "delivery_package": build_delivery_package(SAMPLE_DOCUMENT, SAMPLE_SOURCES, "preverified_sample", fictional=True),
     }
+
+
+def _source_ids_for(text: str, sources: list[dict]) -> list[str]:
+    """Return only IDs emitted by retrieval; model/user text never supplies IDs."""
+    words = {word.lower() for word in re.findall(r"[a-zA-Z]{4,}", text)}
+    matched = [source["source_id"] for source in sources
+               if words.intersection(re.findall(r"[a-zA-Z]{4,}", source.get("excerpt", "").lower()))]
+    return matched[:3] or ([sources[0]["source_id"]] if sources else [])
+
+
+def _first_match(pattern: str, text: str, fallback: str | None = None) -> str | None:
+    matched = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+    return matched.group(1).strip(" .") if matched else fallback
+
+
+def looks_like_client_brief(context: str) -> bool:
+    resume_markers = ("resume", "curriculum vitae", "work experience", "professional experience",
+                      "education", "technical skills", "certifications")
+    # Resumes often mention generic words such as "deliver" or "scope". Do
+    # not turn them into a fictitious client handoff merely because they match
+    # the broad brief vocabulary below.
+    if sum(marker in context.lower() for marker in resume_markers) >= 2:
+        return False
+    keywords = ("requirement", "acceptance", "owner", "deadline", "timeline", "pilot", "deliver", "scope",
+                "需求", "验收", "负责人", "截止", "时间", "试点", "交付", "范围")
+    return sum(keyword in context.lower() for keyword in keywords) >= 2
+
+
+def build_review_only_package(sources: list[dict]) -> dict:
+    """Return a successful, source-backed result for a parsed non-brief.
+
+    The flagship handoff contract must not invent project fields for a resume,
+    invoice, or other readable but out-of-template document.  It is still
+    useful to confirm that parsing succeeded and expose its evidence.
+    """
+    source_ids = [source["source_id"] for source in sources]
+    source_count = len(sources)
+    fields = [
+        {"id": "document_type", "label": "Document type", "value": "Not a client brief / requirements pack",
+         "status": "review", "source_ids": source_ids[:1],
+         "review_reason": "The document was parsed, but it does not contain enough delivery-brief evidence."},
+        {"id": "parsed_evidence", "label": "Parsed evidence", "value": f"Readable text extracted from {source_count} source section(s)",
+         "status": "confirmed", "source_ids": source_ids, "review_reason": None},
+        {"id": "handoff_assessment", "label": "Handoff assessment", "value": None, "status": "missing",
+         "source_ids": source_ids[:1],
+         "review_reason": "Upload a client brief or requirements pack to create a delivery handoff."},
+    ]
+    exception = {"id": "document-type-mismatch", "type": "template_mismatch",
+                 "title": "Document parsed; delivery handoff is not applicable",
+                 "description": "This document is readable, but it is not a client brief or requirements pack. No delivery fields were inferred.",
+                 "field_ids": ["document_type", "handoff_assessment"], "source_ids": source_ids[:1],
+                 "blocks_handoff": True}
+    return {"title": "Parsed document review", "summary": "Text and source evidence were extracted successfully; upload a client brief to prepare a delivery handoff.",
+            "mode": "review_only", "fields": fields, "exceptions": [exception], "sources": sources,
+            "outcome": {"field_count": len(fields), "review_count": 1, "confirmed_count": 1},
+            "handoff": {"mode": "preview_only", "target_label": "Project delivery system / API", "ready": False,
+                        "blocked_by": [exception["id"]], "mappings": [],
+                        "payload": {"source_references_attached": bool(sources), "review_decisions_recorded": False}}}
+
+
+def build_delivery_package(context: str, sources: list[dict], mode: str, fictional: bool = False) -> dict:
+    """Create the product contract without parsing model prose into UI fields.
+
+    This deterministic package is retained for the pre-verified sample.
+    Live uploads use structured model extraction and evidence validation.
+    """
+    project = _first_match(r"#\s*([^\n]+)", context, "Client brief")
+    # Keep proper names/dates case-sensitive: the permissive regex used for
+    # prose otherwise mistakes phrases such as "owner must decide" for names.
+    owner_match = re.search(r"(?:[Cc]ompliance\s+[Oo]wner\s+is|[Oo]wner\s*:)\s*([A-Z][a-z]+\s+[A-Z][a-z]+)", context)
+    owner = owner_match.group(1) if owner_match else None
+    deadline_match = re.search(r"(?:ready by|[Dd]eadline(?: is|:)?|by)\s+([A-Z][a-z]+\s+\d{1,2})", context)
+    deadline = deadline_match.group(1) if deadline_match else None
+    timeline_confirmed = False
+    if not deadline and re.search(r"\bDay\s+7\b", context, re.I):
+        # A relative delivery commitment is still a real, source-backed due
+        # date for this fixed-scope pilot; it must not masquerade as missing.
+        deadline = "7-day pilot; delivery on Day 7"
+        timeline_confirmed = True
+    retention_24 = bool(re.search(r"(?:deleted|delete).*?24\s*hours|24\s*hours.*?(?:deleted|delete)", context, re.I | re.S))
+    retention_30 = bool(re.search(r"(?:archive|retain).*?30\s*days|30\s*days.*?(?:archive|retain)", context, re.I | re.S))
+    fields = [
+        ("project_client", "Project / client", project, "confirmed", None),
+        ("business_outcome", "Business outcome", _first_match(r"(?:goal|outcome)\s*\n?([^\n]+)", context, "Delivery-ready, source-linked work package"), "confirmed", None),
+        ("primary_users", "Primary users", "Delivery managers and operations leads", "confirmed", None),
+        ("required_outputs", "Required outputs", "Structured delivery fields, review queue, and handoff preview", "confirmed", None),
+        ("acceptance_criteria", "Acceptance criteria", "Material claims are source-linked and exceptions are reviewed", "confirmed", None),
+        ("owner", "Owner", owner, "confirmed" if owner else "missing", "No named owner was found in the document." if not owner else None),
+        ("timeline", "Timeline", deadline or "Not specified", "confirmed" if timeline_confirmed else ("review" if deadline else "missing"), None if timeline_confirmed else ("Confirm the delivery deadline." if deadline else "No delivery deadline was found.")),
+        ("data_privacy", "Data / privacy boundary", "Delete uploaded documents within 24 hours" if retention_24 else None, "review" if retention_30 else ("confirmed" if retention_24 else "missing"), "Two retention instructions conflict." if retention_24 and retention_30 else None),
+        ("target_handoff", "Target handoff", "Project delivery system / API", "review", "Target system remains an open decision."),
+    ]
+    delivery_fields = [{"id": field_id, "label": label, "value": value, "status": status,
+                        "source_ids": _source_ids_for(str(value or label), sources), "review_reason": reason}
+                       for field_id, label, value, status, reason in fields]
+    if timeline_confirmed:
+        next(field for field in delivery_fields if field["id"] == "timeline")["source_ids"] = ["northstar-timeline"] if fictional else _source_ids_for("day 7 delivery handoff", sources)
+    exceptions = []
+    if not owner:
+        exceptions.append({"id": "missing-owner", "type": "missing", "title": "Assign a delivery owner",
+                           "description": "The document does not name the client product owner.", "field_ids": ["owner"],
+                           "source_ids": _source_ids_for("owner client product", sources), "blocks_handoff": True})
+    if retention_24 and (retention_30 or fictional):
+        retention_sources = [source["source_id"] for source in sources
+                             if "24 hours" in source.get("excerpt", "").lower() or "30 days" in source.get("excerpt", "").lower()]
+        exceptions.append({"id": "retention-conflict", "type": "conflict", "title": "Resolve retention period",
+                           "description": "The brief says delete after 24 hours; its appendix says archive for 30 days.",
+                           "field_ids": ["data_privacy"], "source_ids": retention_sources or _source_ids_for("retention archive", sources), "blocks_handoff": True})
+    exceptions.append({"id": "target-system-review", "type": "weak_evidence", "title": "Confirm target handoff",
+                       "description": "Choose the delivery system during review; this demo only previews an API payload.",
+                       "field_ids": ["target_handoff"], "source_ids": _source_ids_for("handoff delivery", sources), "blocks_handoff": False})
+    blocked_by = [item["id"] for item in exceptions if item["blocks_handoff"]]
+    return {"title": "Delivery work package", "summary": "Ready with review items" if exceptions else "Approved for handoff",
+            "mode": mode, "fields": delivery_fields, "exceptions": exceptions, "sources": sources,
+            "outcome": {"field_count": len(delivery_fields), "review_count": len(exceptions), "confirmed_count": sum(f["status"] == "confirmed" for f in delivery_fields)},
+            "handoff": {"mode": "preview_only", "target_label": "Project delivery system / API", "ready": not blocked_by,
+                        "blocked_by": blocked_by, "mappings": [{"source_field": "project_client", "target_field": "project_name"}, {"source_field": "required_outputs", "target_field": "scope"}, {"source_field": "acceptance_criteria", "target_field": "acceptance_criteria"}, {"source_field": "owner", "target_field": "owner"}, {"source_field": "timeline", "target_field": "due_date"}, {"source_field": "target_handoff", "target_field": "target_system"}],
+                        "payload": {"project_name": project, "scope": "Structured delivery fields, review queue, and handoff preview", "acceptance_criteria": "Material claims are source-linked and exceptions are reviewed", "owner": owner, "due_date": deadline, "target_system": "Project delivery system / API", "source_references_attached": True, "review_decisions_recorded": False}}}
 
 
 def validate_file(filename: str, content: bytes):
@@ -323,7 +450,8 @@ async def analyze_demo(request: Request, payload: AnalyzeRequest = Body(...), to
         return ApiCommonResponseDTO(status=400, message="demo.questionRequired", data={}).model_dict()
 
     if payload.use_sample and payload.analysis_type != "free_question":
-        result = SAMPLE_ANALYSES[payload.analysis_type]
+        result = (build_delivery_package(SAMPLE_DOCUMENT, SAMPLE_SOURCES, "preverified_sample", fictional=True)
+                  if payload.analysis_type == "delivery_handoff" else SAMPLE_ANALYSES[payload.analysis_type])
         return EventSourceResponse(sample_event_stream(result))
 
     client_ip = get_client_ip(request)
@@ -353,7 +481,8 @@ async def analyze_demo(request: Request, payload: AnalyzeRequest = Body(...), to
 
 
 async def sample_event_stream(result: dict):
-    yield {"event": "status", "data": json.dumps({"stage": "ready", "mode": "preverified_sample"})}
+    for stage in ("identify", "extract", "validate", "review"):
+        yield {"event": "status", "data": json.dumps({"stage": stage, "mode": "preverified_sample"})}
     yield {"event": "result", "data": json.dumps(result, ensure_ascii=False)}
     yield {"event": "done", "data": json.dumps({"mode": "preverified_sample"})}
 
@@ -361,12 +490,13 @@ async def sample_event_stream(result: dict):
 async def live_analysis_stream(job_id: str, payload: AnalyzeRequest, session):
     started = time.monotonic()
     try:
-        yield {"event": "status", "data": json.dumps({"stage": "retrieving", "mode": "live_model"})}
+        yield {"event": "status", "data": json.dumps({"stage": "identify", "mode": "live_model"})}
         if payload.use_sample:
             context = SAMPLE_RAG_CONTEXT
             sources = SAMPLE_SOURCES
         else:
-            query = payload.question or analysis_prompt(payload.analysis_type)
+            prompt_type = "requirements" if payload.analysis_type == "delivery_handoff" else payload.analysis_type
+            query = payload.question or analysis_prompt(prompt_type)
             docs = await retrieval_pipeline.retrieve(query=query, kb_path=session.storage_path,
                                                      top_k=6, fetch_k=16,
                                                      embedding_model=setting.EMBEDDING_MODEL,
@@ -375,48 +505,79 @@ async def live_analysis_stream(job_id: str, payload: AnalyzeRequest, session):
             sources = context_builder.to_sources(docs)
         if not context:
             raise RuntimeError("No relevant source context was found")
+        if payload.analysis_type == "delivery_handoff" and not looks_like_client_brief(context):
+            result = build_review_only_package(sources)
+            finish_demo_job(job_id, status="completed", result=result, sources=sources)
+            add_demo_event({"session_id": session.id if session else None,
+                            "user_id": str(session.user_id) if session else None,
+                            "event_type": payload.analysis_type, "status": "success",
+                            "properties": {"source_count": len(sources), "mode": "review_only"}})
+            yield {"event": "status", "data": json.dumps({"stage": "review", "mode": "review_only"})}
+            yield {"event": "result", "data": json.dumps(result, ensure_ascii=False)}
+            yield {"event": "done", "data": json.dumps({"job_id": job_id, "mode": "review_only"})}
+            return
         source_ids = [source["source_id"] for source in sources]
         yield {"event": "source", "data": json.dumps({"sources": sources}, ensure_ascii=False)}
+        yield {"event": "status", "data": json.dumps({"stage": "extract", "mode": "live_model"})}
         answer = ""
         final_answer = ""
-        workflow_run_id = None
+        delivery_package = None
         async with asyncio.timeout(setting.LLM_STREAM_TIMEOUT):
             async for event in stream_document_analysis(
                 inputs={
                     "analysis_type": payload.analysis_type,
                     "lang": payload.lang,
-                    "question": payload.question or analysis_prompt(payload.analysis_type),
+                    "question": payload.question or analysis_prompt("requirements" if payload.analysis_type == "delivery_handoff" else payload.analysis_type),
                     "context": context,
                 },
                 user=str(session.user_id) if session else f"guest-{job_id}",
+                sources=sources,
             ):
-                if event["event"] == "text":
+                if event["event"] == "status":
+                    yield {"event": "status", "data": json.dumps({"stage": event["stage"], "mode": "live_model"})}
+                elif event["event"] == "text":
                     token = event["text"]
                     answer += token
+                    yield {"event": "message", "data": json.dumps({"content": token}, ensure_ascii=False)}
                 elif event["event"] == "finished":
                     final_answer = event["answer"]
-                    workflow_run_id = event["workflow_run_id"]
+                    delivery_package = event.get("delivery_package")
+        streamed_answer = answer
         answer = normalize_source_citations(final_answer or answer, source_ids)
-        if not answer:
-            raise RuntimeError("Dify workflow completed without an answer")
-        yield {"event": "message", "data": json.dumps({"content": answer}, ensure_ascii=False)}
-        result = {"title": payload.analysis_type.replace("_", " ").title(), "summary": answer,
-                  "findings": parse_findings(answer, source_ids), "sources": sources, "mode": "live_model"}
+        if payload.analysis_type == "delivery_handoff" and not delivery_package:
+            raise RuntimeError("Document analysis completed without delivery fields")
+        if payload.analysis_type != "delivery_handoff" and not answer:
+            raise RuntimeError("Document analysis completed without an answer")
+        if answer and not streamed_answer:
+            yield {"event": "message", "data": json.dumps({"content": answer}, ensure_ascii=False)}
+        result = (delivery_package if payload.analysis_type == "delivery_handoff"
+                  else {"title": payload.analysis_type.replace("_", " ").title(), "summary": answer,
+                        "findings": parse_findings(answer, source_ids), "sources": sources, "mode": "live_model"})
         finish_demo_job(job_id, status="completed", result=result, sources=sources)
         duration_ms = int((time.monotonic() - started) * 1000)
         add_demo_event({"session_id": session.id if session else None,
                         "user_id": str(session.user_id) if session else None,
                         "event_type": payload.analysis_type, "status": "success", "duration_ms": duration_ms,
-                        "properties": {"source_count": len(sources), "mode": "dify_workflow",
-                                       "workflow_run_id": workflow_run_id}})
+                        "properties": {"source_count": len(sources), "mode": "langgraph"}})
         yield {"event": "result", "data": json.dumps(result, ensure_ascii=False)}
         yield {"event": "done", "data": json.dumps({"job_id": job_id, "mode": "live_model"})}
+    except asyncio.TimeoutError:
+        logger.error("Document-to-Decision model timed out")
+        finish_demo_job(job_id, status="failed", error_code="provider_timeout")
+        yield {"event": "error", "data": json.dumps({
+            "code": "live_analysis_timeout",
+            "message": f"Document analysis timed out after {setting.LLM_STREAM_TIMEOUT} seconds.",
+        })}
     except BaseException as error:
+        if isinstance(error, asyncio.CancelledError):
+            finish_demo_job(job_id, status="failed", error_code="client_disconnected")
+            raise
         logger.error(error)
+        logger.error(traceback.format_exc())
         finish_demo_job(job_id, status="failed", error_code="provider_or_analysis_error")
         yield {"event": "error", "data": json.dumps({
             "code": "live_analysis_unavailable",
-            "message": "Live analysis is temporarily unavailable. No sample answer was substituted.",
+            "message": str(error) or "Live analysis failed without a diagnostic.",
         })}
 
 

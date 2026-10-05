@@ -14,7 +14,7 @@ def create_tables():
     from src.server.db import models  # noqa: F401
     from src.server.db import ai_models  # noqa: F401
     Base.metadata.create_all(bind=engine)
-    from src.server.crm_db.base import create_crm_tables
+    from src.server.db.crm_base import create_crm_tables
     create_crm_tables()
 
 

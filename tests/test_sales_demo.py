@@ -11,7 +11,8 @@ from src.server.ai.rag.context_service import context_builder
 from src.server.ai.rag.rag_dto import RetrievedDocumentDto
 from src.server.service.demo_service import (LeadRequest, AnalyzeRequest, analyze_demo, create_lead,
                                              get_sample, live_analysis_stream, normalize_source_citations,
-                                             parse_findings, validate_file)
+                                             parse_findings, validate_file, build_delivery_package,
+                                             build_review_only_package, looks_like_client_brief)
 from src.server.db.base import SessionLocal
 
 
@@ -30,6 +31,41 @@ def test_sample_is_explicit_and_traceable():
     assert result["data"]["document"]["fictional"] is True
     assert result["data"]["results"]["executive_summary"]["mode"] == "preverified_sample"
     assert result["data"]["results"]["requirements"]["sources"][0]["source_id"]
+    package = result["data"]["delivery_package"]
+    assert package["mode"] == "preverified_sample"
+    assert len(package["fields"]) == 9
+    assert {item["type"] for item in package["exceptions"]} >= {"missing", "conflict"}
+    assert package["handoff"]["mode"] == "preview_only"
+    timeline = next(field for field in package["fields"] if field["id"] == "timeline")
+    assert timeline["status"] == "confirmed"
+    assert timeline["value"] == "7-day pilot; delivery on Day 7"
+    assert timeline["source_ids"] == ["northstar-timeline"]
+    assert package["handoff"]["payload"]["due_date"] == timeline["value"]
+    valid_source_ids = {source["source_id"] for source in package["sources"]}
+    assert all(set(field["source_ids"]) <= valid_source_ids for field in package["fields"])
+
+
+def test_structured_contract_extracts_owner_and_deadline_without_prose_parsing():
+    context = "# Beacon Policy Review\nThe compliance owner is Maya Chen. The first pilot must be ready by September 15.\nRequirements and acceptance criteria define the delivery scope. Uploaded documents must be deleted within 24 hours."
+    sources = [{"source_id": "source-1", "excerpt": context, "filename": "brief.md", "page": None, "chunk_index": 0}]
+    package = build_delivery_package(context, sources, "live_model")
+    fields = {field["id"]: field for field in package["fields"]}
+    assert fields["owner"]["value"] == "Maya Chen"
+    assert fields["timeline"]["value"] == "September 15"
+    assert looks_like_client_brief(context) is True
+    assert looks_like_client_brief("a recipe for soup") is False
+    assert looks_like_client_brief("Professional experience delivering AI projects. Education and technical skills.") is False
+
+
+def test_non_brief_builds_source_backed_review_only_package():
+    sources = [{"source_id": "source-1", "excerpt": "Professional experience and skills.",
+                "filename": "resume.pdf", "page": 1, "chunk_index": 0}]
+    package = build_review_only_package(sources)
+    assert package["mode"] == "review_only"
+    assert package["handoff"]["ready"] is False
+    assert package["exceptions"][0]["id"] == "document-type-mismatch"
+    assert package["fields"][1]["status"] == "confirmed"
+    assert package["fields"][1]["source_ids"] == ["source-1"]
 
 
 def test_file_validation_rejects_mismatch_and_binary():
@@ -173,10 +209,10 @@ def test_model_citation_variants_are_normalized_only_for_valid_sources():
     assert "SOURCE_ID: invented-source" in normalized
 
 
-def test_live_analysis_uses_published_dify_workflow(monkeypatch):
+def test_live_analysis_uses_local_document_workflow(monkeypatch):
     captured = {}
 
-    async def fake_workflow(*, inputs, user):
+    async def fake_workflow(*, inputs, user, sources):
         captured["inputs"] = inputs
         captured["user"] = user
         yield {"event": "text", "text": "Delete uploads after 24 hours [northstar-requirements]."}
@@ -201,3 +237,67 @@ def test_live_analysis_uses_published_dify_workflow(monkeypatch):
     assert captured["inputs"]["lang"] == "en"
     assert "SOURCE_ID: northstar-requirements" in captured["inputs"]["context"]
     assert any(event["event"] == "result" for event in events)
+
+
+def test_live_delivery_handoff_returns_review_only_for_non_brief(monkeypatch):
+    retrieved = [RetrievedDocumentDto(
+        content="Experienced AI engineer with Python and machine learning skills.",
+        metadata={"original_filename": "resume.pdf", "page": 1, "chunk_index": 0}, score=0.9,
+    )]
+
+    async def fake_retrieve(**_kwargs):
+        return retrieved
+
+    async def fail_if_called(**_kwargs):
+        raise AssertionError("non-brief should not invoke the handoff model")
+        yield  # pragma: no cover
+
+    captured = {}
+    monkeypatch.setattr("src.server.service.demo_service.retrieval_pipeline.retrieve", fake_retrieve)
+    monkeypatch.setattr("src.server.service.demo_service.stream_document_analysis", fail_if_called)
+    monkeypatch.setattr("src.server.service.demo_service.finish_demo_job", lambda *args, **kwargs: captured.update(kwargs))
+    monkeypatch.setattr("src.server.service.demo_service.add_demo_event", lambda *_args, **_kwargs: None)
+
+    async def collect():
+        payload = AnalyzeRequest(analysis_type="delivery_handoff", use_sample=False, session_id="session-1")
+        session = SimpleNamespace(id="session-1", user_id="1", storage_path="/tmp/session")
+        return [event async for event in live_analysis_stream("job-review", payload, session)]
+
+    events = run(collect())
+    result = next(event for event in events if event["event"] == "result")
+    assert json.loads(result["data"])["mode"] == "review_only"
+    assert captured["status"] == "completed"
+
+
+def test_live_analysis_returns_the_real_upstream_failure(monkeypatch):
+    async def failing_workflow(*args, **kwargs):
+        raise RuntimeError("Model provider returned HTTP 401")
+        yield  # pragma: no cover - make this an async generator
+
+    monkeypatch.setattr("src.server.service.demo_service.stream_document_analysis", failing_workflow)
+    monkeypatch.setattr("src.server.service.demo_service.finish_demo_job", lambda *args, **kwargs: None)
+
+    async def collect():
+        payload = AnalyzeRequest(analysis_type="free_question", question="Who owns this?", use_sample=True)
+        return [event async for event in live_analysis_stream("job-error", payload, None)]
+
+    events = run(collect())
+    error_event = next(event for event in events if event["event"] == "error")
+    assert "HTTP 401" in json.loads(error_event["data"])["message"]
+
+
+def test_live_analysis_reports_model_timeout(monkeypatch):
+    async def timed_out_workflow(*args, **kwargs):
+        raise asyncio.TimeoutError()
+        yield  # pragma: no cover - make this an async generator
+
+    monkeypatch.setattr("src.server.service.demo_service.stream_document_analysis", timed_out_workflow)
+    monkeypatch.setattr("src.server.service.demo_service.finish_demo_job", lambda *args, **kwargs: None)
+
+    async def collect():
+        payload = AnalyzeRequest(analysis_type="free_question", question="Who owns this?", use_sample=True)
+        return [event async for event in live_analysis_stream("job-timeout", payload, None)]
+
+    events = run(collect())
+    error_event = next(event for event in events if event["event"] == "error")
+    assert json.loads(error_event["data"])["code"] == "live_analysis_timeout"

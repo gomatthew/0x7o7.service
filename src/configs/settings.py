@@ -111,6 +111,7 @@ class BaseSetting:
     LLM_REQUEST_TIMEOUT = env_int("LLM_REQUEST_TIMEOUT", 45)
     LLM_STREAM_TIMEOUT = env_int("LLM_STREAM_TIMEOUT", 90)
     LLM_MAX_RETRIES = env_int("LLM_MAX_RETRIES", 1)
+    LLM_ENABLE_THINKING = env_bool("LLM_ENABLE_THINKING", False)
     EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", LLM_BASE_URL)
     EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", LLM_API_KEY)
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B")
@@ -145,6 +146,8 @@ class BaseSetting:
         "postgresql+psycopg://postgres@127.0.0.1:5432/service_data",
     )
     CRM_DATABASE_URL = os.getenv("CRM_DATABASE_URL", "")
+    MARKET_SOURCE_DATABASE_URL = os.getenv("MARKET_SOURCE_DATABASE_URL", "")
+    CRM_OWNER_ID = os.getenv("CRM_OWNER_ID", "6")
 
 
 class UnitTestSetting(BaseSetting):

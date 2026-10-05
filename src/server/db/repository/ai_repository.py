@@ -110,7 +110,7 @@ def get_chat_history_list_from_db(session, user_id: str, page_no: int = 1, page_
 
 @with_session
 def add_message_to_db(session, conversation_id=None, message_id=None, ai_response=None, query=None, llm_model=None,
-                      user_id=None, create_time=None, finish_time=None):
+                      user_id=None, create_time=None, finish_time=None, meta_data=None):
     """
     新增对话
     """
@@ -121,11 +121,36 @@ def add_message_to_db(session, conversation_id=None, message_id=None, ai_respons
     new_message.llm_model = llm_model
     new_message.user_id = user_id
     new_message.ai_response = ai_response
+    new_message.meta_data = meta_data or {}
     new_message.finish_time = finish_time
     new_message.create_time = create_time
     session.add(new_message)
     session.commit()
     return message_id
+
+
+@with_session
+def get_ocr_history_from_db(session, conversation_id: str, user_id: str, limit: int = 6):
+    query = session.query(MessageModel).join(
+        ConversationModel, ConversationModel.conversation_id == MessageModel.conversation_id
+    ).filter(
+        MessageModel.conversation_id == conversation_id,
+        MessageModel.user_id == str(user_id),
+        ConversationModel.user_id == str(user_id),
+        MessageModel.status == RecordStatusEnum.ACTIVATE.value,
+        ConversationModel.status == RecordStatusEnum.ACTIVATE.value,
+    )
+    first = query.order_by(MessageModel.create_time.asc()).first()
+    rows = query.order_by(MessageModel.create_time.desc()).limit(limit).all()
+    if first and all(row.message_id != first.message_id for row in rows):
+        rows.append(first)
+    if not rows or any((row.meta_data or {}).get("biz_type") != "ocr" for row in rows):
+        return []
+    messages = []
+    for row in reversed(rows):
+        messages.extend([{"role": "user", "content": (row.meta_data or {}).get("ocr_context") or row.user_query},
+                         {"role": "assistant", "content": row.ai_response}])
+    return messages
 
 
 @with_session

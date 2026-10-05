@@ -24,6 +24,7 @@ langchain-community==0.3.27
 langchain-core==0.3.74
 langchain-openai==0.3.30
 langchain-text-splitters==0.3.9
+langgraph==1.0.1
 langsmith==0.4.14
 loguru==0.7.3
 minio>=7.2.20

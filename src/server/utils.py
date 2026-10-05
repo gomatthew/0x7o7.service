@@ -99,36 +99,61 @@ async def rate_limit_exception_handler(request: Request, exc: RateLimitException
     return JSONResponse(status_code=200, content={"status": exc.status, "message": exc.message, "data": {}})
 
 
-def http_stream_request(url: str, http_method: str, headers: dict = dict(), data: Any = dict(), meta: dict = dict()):
+def http_stream_request(url: str, http_method: str, headers: dict | None = None,
+                        data: Any = None, meta: dict | None = None):
+    """Proxy Dify SSE data fields while safely ignoring SSE control framing."""
+    headers = headers or {}
+    data = {} if data is None else data
+    meta = meta or {}
+    model_name = None
     try:
         with httpx.stream(method=http_method, url=url, headers=headers, json=data, timeout=None) as response:
+            response.raise_for_status()
             for line in response.iter_lines():
-                line = line.lstrip('data: ')
-                if line and 'ping' not in line:
-                    json_data = json.loads(line)
-                    match json_data.get('event'):
-                        # case "workflow_started":
-                        #     query = json_data.get('inputs').get('sys.query')
+                # SSE includes blank lines, `event: ping`, comments, IDs, etc.
+                # Only a `data:` field is a JSON payload. `lstrip('data: ')`
+                # is not prefix removal and caused control lines to be decoded.
+                if not line or line.startswith(":") or not line.startswith("data:"):
+                    continue
+                payload = line[5:].lstrip()
+                if not payload:
+                    continue
+                if payload == "[DONE]":
+                    return
+                try:
+                    json_data = json.loads(payload)
+                except json.JSONDecodeError:
+                    logger.warning("Ignoring malformed JSON data field in upstream SSE response")
+                    continue
+
+                event_type = json_data.get("event")
+                try:
+                    match event_type:
                         case "node_finished":
-                            if json_data.get('data').get('process_data').get('model_name') is not None:
-                                model_name = json_data.get('data').get('process_data').get('model_name')
-                        case 'workflow_finished':
-                            add_conversation_to_db(conversation_id=json_data['conversation_id'],
-                                                   title=meta.get('query'),
-                                                   create_time=dt.ts2dt(json_data['data'].get('created_at')),
-                                                   finish_time=dt.ts2dt(json_data['data'].get('finished_at')),
-                                                   llm_model=model_name, user_id=meta.get('user_id'))
-                            add_message_to_db(conversation_id=json_data['conversation_id'],
-                                              create_time=dt.ts2dt(json_data['data'].get('created_at')),
-                                              finish_time=dt.ts2dt(json_data['data'].get('finished_at')),
-                                              message_id=json_data.get('message_id'), query=meta.get('query'),
-                                              ai_response=json_data.get('data').get('outputs').get('answer'),
-                                              llm_model=model_name, user_id=meta.get('user_id'))
-                        case _:
-                            pass
-                    yield line.strip()
-    except BaseException as e:
-        logger.error(e)
+                            process_data = (json_data.get("data") or {}).get("process_data") or {}
+                            model_name = process_data.get("model_name") or model_name
+                        case "workflow_finished":
+                            workflow_data = json_data.get("data") or {}
+                            outputs = workflow_data.get("outputs") or {}
+                            add_conversation_to_db(conversation_id=json_data["conversation_id"],
+                                                   title=meta.get("query"),
+                                                   create_time=dt.ts2dt(workflow_data.get("created_at")),
+                                                   finish_time=dt.ts2dt(workflow_data.get("finished_at")),
+                                                   llm_model=model_name, user_id=meta.get("user_id"))
+                            add_message_to_db(conversation_id=json_data["conversation_id"],
+                                              create_time=dt.ts2dt(workflow_data.get("created_at")),
+                                              finish_time=dt.ts2dt(workflow_data.get("finished_at")),
+                                              message_id=json_data.get("message_id"), query=meta.get("query"),
+                                              ai_response=outputs.get("answer"), llm_model=model_name,
+                                              user_id=meta.get("user_id"))
+                except (KeyError, TypeError, AttributeError):
+                    logger.exception("Unable to persist upstream workflow SSE event")
+
+                yield payload
+                if event_type in {"error", "workflow_failed"}:
+                    return
+    except BaseException as error:
+        logger.error(error)
         logger.error(traceback.format_exc())
 
 

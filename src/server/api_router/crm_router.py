@@ -1,194 +1,50 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+# -*- coding: utf-8 -*-
+from fastapi import APIRouter
 
-from src.server.crm_db.base import get_crm_db
-from src.server.dto.crm_dto import (
-    ActivityCreate,
-    CompanyCreate,
-    CompanyUpdate,
-    ContactCreate,
-    ContactUpdate,
-    DealCreate,
-    DealUpdate,
-    DraftDecision,
-    FollowupCreate,
-    FollowupUpdate,
-    OutreachDraftCreate,
-)
-from src.server.dto.response_dto import ApiCommonResponseDTO
+from src.server.dto import ApiCommonResponseDTO
 from src.server.service import crm_service
 
 
-crm_router = APIRouter(prefix="/crm", tags=["CRM"])
+crm_router = APIRouter(prefix="/crm", tags=["CRM 管理"])
 
+crm_router.get("/health", summary="检查 CRM 数据源", response_model=ApiCommonResponseDTO)(crm_service.get_crm_health)
+crm_router.get("/dashboard", summary="获取 CRM 综合看板", response_model=ApiCommonResponseDTO)(crm_service.get_dashboard)
 
-def ok(data):
-    return ApiCommonResponseDTO(status=200, message="success", data=data).model_dict()
+crm_router.get("/market/dashboard", summary="获取市场研究统计", response_model=ApiCommonResponseDTO)(crm_service.get_market_dashboard)
+crm_router.get("/market/opportunities", summary="获取市场机会列表", response_model=ApiCommonResponseDTO)(crm_service.get_market_opportunities)
+crm_router.get("/market/opportunities/{opportunity_id}", summary="获取市场机会详情", response_model=ApiCommonResponseDTO)(crm_service.get_market_opportunity)
+crm_router.get("/market/signals", summary="获取市场信号列表", response_model=ApiCommonResponseDTO)(crm_service.get_market_signals)
+crm_router.get("/market/signals/{signal_id}", summary="获取市场信号详情", response_model=ApiCommonResponseDTO)(crm_service.get_market_signal)
+crm_router.get("/market/agencies", summary="获取代理商候选列表", response_model=ApiCommonResponseDTO)(crm_service.get_market_agencies)
+crm_router.get("/market/research_runs", summary="获取市场研究运行记录", response_model=ApiCommonResponseDTO)(crm_service.get_market_research_runs)
+crm_router.get("/market/publication", summary="获取最新市场发布记录", response_model=ApiCommonResponseDTO)(crm_service.get_market_publication)
 
+crm_router.get("/companies", summary="获取 CRM 公司列表", response_model=ApiCommonResponseDTO)(crm_service.get_companies)
+crm_router.get("/companies/{company_id}", summary="获取 CRM 公司详情", response_model=ApiCommonResponseDTO)(crm_service.get_company)
+crm_router.post("/companies", summary="创建 CRM 公司", response_model=ApiCommonResponseDTO)(crm_service.create_company)
+crm_router.patch("/companies/{company_id}", summary="更新 CRM 公司", response_model=ApiCommonResponseDTO)(crm_service.update_company)
 
-@crm_router.get("/health", include_in_schema=False)
-def crm_health(session: Session = Depends(get_crm_db)):
-    session.execute(text("SELECT 1"))
-    return ok({"database": "ok"})
+crm_router.get("/contacts", summary="获取 CRM 联系人列表", response_model=ApiCommonResponseDTO)(crm_service.get_contacts)
+crm_router.post("/contacts", summary="创建 CRM 联系人", response_model=ApiCommonResponseDTO)(crm_service.create_contact)
+crm_router.patch("/contacts/{contact_id}", summary="更新 CRM 联系人", response_model=ApiCommonResponseDTO)(crm_service.update_contact)
 
+crm_router.get("/deals", summary="获取 CRM Deal 列表", response_model=ApiCommonResponseDTO)(crm_service.get_deals)
+crm_router.post("/deals", summary="创建 CRM Deal", response_model=ApiCommonResponseDTO)(crm_service.create_deal)
+crm_router.patch("/deals/{deal_id}", summary="更新 CRM Deal", response_model=ApiCommonResponseDTO)(crm_service.update_deal)
 
-@crm_router.get("/dashboard")
-def get_dashboard(
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.dashboard(session, owner_user_id))
+crm_router.get("/approvals", summary="获取审批列表", response_model=ApiCommonResponseDTO)(crm_service.get_approvals)
+crm_router.post("/approvals", summary="创建审批请求", response_model=ApiCommonResponseDTO)(crm_service.create_approval)
+crm_router.post("/approvals/{approval_id}/decision", summary="提交审批决策", response_model=ApiCommonResponseDTO)(crm_service.decide_approval)
 
+crm_router.get("/tasks", summary="获取执行任务列表", response_model=ApiCommonResponseDTO)(crm_service.get_execution_tasks)
+crm_router.post("/tasks/{task_id}/transition", summary="变更执行任务状态", response_model=ApiCommonResponseDTO)(crm_service.transition_execution_task)
 
-@crm_router.get("/companies")
-def get_companies(
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.list_companies(session, owner_user_id))
+crm_router.get("/outreach_drafts", summary="获取外联草稿列表", response_model=ApiCommonResponseDTO)(crm_service.get_outreach_drafts)
+crm_router.post("/outreach_drafts", summary="创建外联草稿", response_model=ApiCommonResponseDTO)(crm_service.create_outreach_draft)
 
+crm_router.get("/followups", summary="获取跟进任务列表", response_model=ApiCommonResponseDTO)(crm_service.get_followups)
+crm_router.post("/followups", summary="创建跟进任务", response_model=ApiCommonResponseDTO)(crm_service.create_followup)
+crm_router.patch("/followups/{followup_id}", summary="更新跟进任务", response_model=ApiCommonResponseDTO)(crm_service.update_followup)
 
-@crm_router.post("/companies")
-def post_company(
-    payload: CompanyCreate,
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.create_company(session, owner_user_id, payload))
-
-
-@crm_router.patch("/companies/{company_id}")
-def patch_company(
-    company_id: int,
-    payload: CompanyUpdate,
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.update_company(session, owner_user_id, company_id, payload))
-
-
-@crm_router.get("/contacts")
-def get_contacts(
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.list_contacts(session, owner_user_id))
-
-
-@crm_router.post("/contacts")
-def post_contact(
-    payload: ContactCreate,
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.create_contact(session, owner_user_id, payload))
-
-
-@crm_router.patch("/contacts/{contact_id}")
-def patch_contact(
-    contact_id: int,
-    payload: ContactUpdate,
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.update_contact(session, owner_user_id, contact_id, payload))
-
-
-@crm_router.get("/deals")
-def get_deals(
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.list_deals(session, owner_user_id))
-
-
-@crm_router.post("/deals")
-def post_deal(
-    payload: DealCreate,
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.create_deal(session, owner_user_id, payload))
-
-
-@crm_router.patch("/deals/{deal_id}")
-def patch_deal(
-    deal_id: int,
-    payload: DealUpdate,
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.update_deal(session, owner_user_id, deal_id, payload))
-
-
-@crm_router.get("/activities")
-def get_activities(
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.list_activities(session, owner_user_id))
-
-
-@crm_router.post("/activities")
-def post_activity(
-    payload: ActivityCreate,
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.create_activity(session, owner_user_id, payload))
-
-
-@crm_router.get("/outreach-drafts")
-def get_outreach_drafts(
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.list_drafts(session, owner_user_id))
-
-
-@crm_router.post("/outreach-drafts")
-def post_outreach_draft(
-    payload: OutreachDraftCreate,
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.create_draft(session, owner_user_id, payload))
-
-
-@crm_router.post("/outreach-drafts/{draft_id}/{action}")
-def decide_outreach_draft(
-    draft_id: int,
-    action: str,
-    payload: DraftDecision,
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.transition_draft(session, owner_user_id, draft_id, action, payload.note))
-
-
-@crm_router.get("/followups")
-def get_followups(
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.list_followups(session, owner_user_id))
-
-
-@crm_router.post("/followups")
-def post_followup(
-    payload: FollowupCreate,
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.create_followup(session, owner_user_id, payload))
-
-
-@crm_router.patch("/followups/{task_id}")
-def patch_followup(
-    task_id: int,
-    payload: FollowupUpdate,
-    owner_user_id: str = Depends(crm_service.require_crm_admin),
-    session: Session = Depends(get_crm_db),
-):
-    return ok(crm_service.update_followup(session, owner_user_id, task_id, payload))
+crm_router.get("/activities", summary="获取 CRM 活动列表", response_model=ApiCommonResponseDTO)(crm_service.get_activities)
+crm_router.post("/activities", summary="创建 CRM 活动", response_model=ApiCommonResponseDTO)(crm_service.create_activity)

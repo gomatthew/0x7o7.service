@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import traceback
 from typing import Optional
+from urllib.parse import urlparse
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai.chat_models import ChatOpenAI
@@ -14,10 +15,17 @@ class LLMService:
     def get_llm(self, temperature: Optional[float] = None, max_tokens: Optional[int] = None,
                 streaming: bool = False) -> ChatOpenAI:
         model_kwargs = {}
-        if max_tokens is not None:
-            model_kwargs["max_completion_tokens"] = max_tokens
-        elif setting.LLM_MAX_TOKENS is not None:
-            model_kwargs["max_completion_tokens"] = setting.LLM_MAX_TOKENS
+        token_limit = setting.LLM_MAX_TOKENS if max_tokens is None else max_tokens
+        if urlparse(setting.LLM_BASE_URL).hostname in {"api.siliconflow.cn", "api.siliconflow.com"}:
+            # ChatOpenAI renames max_tokens; this provider still expects max_tokens.
+            extra_body = {}
+            if token_limit is not None:
+                extra_body["max_tokens"] = token_limit
+            if "/qwen3" in setting.LLM_MODEL.lower():
+                extra_body["enable_thinking"] = setting.LLM_ENABLE_THINKING
+            model_kwargs["extra_body"] = extra_body
+        elif token_limit is not None:
+            model_kwargs["max_completion_tokens"] = token_limit
         return ChatOpenAI(
             model=setting.LLM_MODEL,
             api_key=setting.LLM_API_KEY,
